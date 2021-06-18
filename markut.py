@@ -10,21 +10,24 @@ def ts_to_secs(ts):
     assert len(comps) == 3;
     return 60 * 60 * int(comps[0]) + 60 * int(comps[1]) + int(comps[2]);
 
+def secs_to_ts(secs):
+    return f'{secs//60//60:02}:{secs//60%60:02}:{secs%60:02}';
+
 def ffmpeg_cut_chunk(input_path, start_secs, duration_secs, output_path):
-    cli = ['ffmpeg', 
-           '-ss', str(start_secs), 
-           '-i', input_path, 
-           '-c', 'copy', 
+    cli = ['ffmpeg',
+           '-ss', str(start_secs),
+           '-i', input_path,
+           '-c', 'copy',
            '-t', str(duration_secs),
            output_path];
     subprocess.run(cli)
 
 def ffmpeg_concat_chunks(list_path, output_path):
-    cli = ['ffmpeg', 
-           '-f', 'concat', 
-           '-safe', '0', 
-           '-i', list_path, 
-           '-c', 'copy', 
+    cli = ['ffmpeg',
+           '-f', 'concat',
+           '-safe', '0',
+           '-i', list_path,
+           '-c', 'copy',
            output_path]
     subprocess.run(cli)
 
@@ -35,7 +38,7 @@ def ffmpeg_generate_concat_list(chunk_names, output_path):
 
 def load_ts_from_file(path, delay):
     with open(path, newline='') as csvfile:
-        return [ts_to_secs(row[0]) + delay 
+        return [ts_to_secs(row[0]) + delay
                 for row in csv.reader(csvfile)];
 
 
@@ -49,13 +52,21 @@ if __name__ == '__main__':
     n = len(ts)
     assert n % 2 == 0
 
+    secs = 0;
+    cuts_ts = [];
     for i in range(0, n // 2):
         start    = ts[i * 2 + 0]
         end      = ts[i * 2 + 1]
         duration = end - start
+        secs    += dur
+        cuts_ts.append(secs_to_ts(secs));
         ffmpeg_cut_chunk(args.input, start, duration, f'chunk-{i:02}.mp4')
 
     ourlist_path = 'ourlist.txt'
     chunk_names = [f'chunk-{i:02}.mp4' for i in range(0, n // 2)]
     ffmpeg_generate_concat_list(chunk_names, ourlist_path);
     ffmpeg_concat_chunks(ourlist_path, "output.mp4")
+
+    print("Timestamps of cuts:");
+    for ts in cuts_ts:
+        print(ts)
