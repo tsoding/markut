@@ -5,8 +5,7 @@ import sys
 import subprocess
 import argparse
 
-from collections.abc import Iterable
-from typing import List, NewType
+from typing import List, NewType, Iterable
 
 Secs = NewType('Secs', int)
 
