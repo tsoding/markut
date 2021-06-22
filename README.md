@@ -9,3 +9,12 @@ Given the [VOD](https://help.twitch.tv/s/article/video-on-demand) of the stream 
 ```console
 $ ./markut.py -c marks.csv -i vod.mp4 -d 4
 ```
+
+## Type-Checking
+
+The project uses [Python 3 typing](https://docs.python.org/3/library/typing.html) that is automatically checked with [mypy](http://mypy-lang.org/) on each commit. You can do that locally too:
+
+```console
+$ pip install mypy
+$ mypy markut.py
+```
