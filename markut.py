@@ -6,12 +6,14 @@ import subprocess
 import argparse
 
 from collections.abc import Iterable
-from typing import List
+from typing import List, NewType
 
-def ts_to_secs(ts: str) -> int:
+Secs = NewType('Secs', int)
+
+def ts_to_secs(ts: str) -> Secs:
     comps = ts.split(':');
     assert len(comps) == 3;
-    return 60 * 60 * int(comps[0]) + 60 * int(comps[1]) + int(comps[2]);
+    return Secs(60 * 60 * int(comps[0]) + 60 * int(comps[1]) + int(comps[2]));
 
 def secs_to_ts(secs: int) -> str:
     return f'{secs//60//60:02}:{secs//60%60:02}:{secs%60:02}';
