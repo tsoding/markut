@@ -1,0 +1,14 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  python3-mypy:
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+          architecture: 'x64'
+      - run: pip3 install mypy
+      - run: mypy ./markut.py
