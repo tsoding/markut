@@ -2,13 +2,14 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  python3-mypy:
+  go-build:
     runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-go@v2
         with:
-          python-version: '3.x'
-          architecture: 'x64'
-      - run: pip3 install mypy
-      - run: mypy ./markut.py
+          go-version: '^1.13.1'
+      - run: go build markut.go
+      - run: |
+          go fmt markut.go
+          git diff --exit-code
