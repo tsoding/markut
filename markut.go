@@ -73,6 +73,9 @@ func ffmpegCutChunk(inputPath string, startSecs int, durationSecs int, outputPat
 		"-c", "copy",
 		"-t", strconv.Itoa(durationSecs),
 		outputPath)
+    cmd.Stdin  = os.Stdin;
+    cmd.Stdout = os.Stdout;
+    cmd.Stderr = os.Stderr;
 	err := cmd.Run()
 	panic_if_err(err)
 }
@@ -85,6 +88,9 @@ func ffmpegConcatChunks(listPath string, outputPath string) {
 		"-i", listPath,
 		"-c", "copy",
 		outputPath)
+    cmd.Stdin  = os.Stdin;
+    cmd.Stdout = os.Stdout;
+    cmd.Stderr = os.Stderr;
 	err := cmd.Run()
 	panic_if_err(err)
 }
