@@ -6,15 +6,8 @@ Given the [VOD](https://help.twitch.tv/s/article/video-on-demand) of the stream 
 
 ## Quick Start
 
-```console
-$ ./markut.py -c marks.csv -i vod.mp4 -d 4
-```
-
-## Type-Checking
-
-The project uses [Python 3 typing](https://docs.python.org/3/library/typing.html) that is automatically checked with [mypy](http://mypy-lang.org/) on each commit. You can do that locally too:
+Install [Go](https://golang.org/) and [ffmpeg](https://www.ffmpeg.org/).
 
 ```console
-$ pip install mypy
-$ mypy markut.py
+$ go run markut.go -csv marks.csv -input vod.mp4 -delay 4
 ```
