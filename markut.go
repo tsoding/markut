@@ -143,8 +143,8 @@ func main() {
 		duration := end - start
 		secs += duration
 		cutsTs = append(cutsTs, secsToTs(secs))
-		chunkName := "chunk-%02d.mp4"
-		ffmpegCutChunk(*inputPtr, start, duration, fmt.Sprintf(chunkName, i))
+		chunkName := fmt.Sprintf("chunk-%02d.mp4", i)
+		ffmpegCutChunk(*inputPtr, start, duration, chunkName)
 		chunkNames = append(chunkNames, chunkName)
 	}
 
