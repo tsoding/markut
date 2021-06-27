@@ -59,7 +59,7 @@ func loadTsFromFile(path string, delay int) []int {
 		ts, err := strconv.Atoi(record[0])
 		panic_if_err(err)
 
-		result = append(result, ts)
+		result = append(result, ts + delay)
 	}
 
 	return result
