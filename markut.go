@@ -109,7 +109,6 @@ func usage() {
 	fmt.Printf("SUBCOMMANDS:\n")
 	fmt.Printf("  final      Render the final video\n")
 	fmt.Printf("  chunk      Render specific chunk of the final video\n")
-	fmt.Printf("  help       Print this help message\n")
 }
 
 func subUsage(subName string, subFlag *flag.FlagSet) {
@@ -229,9 +228,6 @@ func main() {
 		finalSubcommand(os.Args[2:])
 	case "chunk":
 		chunkSubcommand(os.Args[2:])
-	case "help":
-		usage()
-		os.Exit(0)
 	default:
 		usage()
 		fmt.Printf("Unknown subcommand %s\n", os.Args[1])
