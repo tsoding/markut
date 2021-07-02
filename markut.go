@@ -40,14 +40,29 @@ func secsToTs(secs int) string {
 	return fmt.Sprintf("%02d:%02d:%02d", hh, mm, ss)
 }
 
-func loadTsFromFile(path string, delay int) []int {
+type Chunk struct {
+	Start   int
+	End     int
+	Ignored []int
+	Name    string
+}
+
+func (chunk Chunk) Duration(end int) int {
+	if end < chunk.Start {
+		panic("Assertion Failed: Incorrect end")
+	}
+	return end - chunk.Start
+}
+
+func loadChunksFromFile(path string, delay int) []Chunk {
 	f, err := os.Open(path)
 	panic_if_err(err)
 	defer f.Close()
 
 	r := csv.NewReader(f)
 
-	var result []int
+	var chunks []Chunk
+	var chunkCurrent *Chunk = nil
 
 	for {
 		record, err := r.Read()
@@ -56,23 +71,50 @@ func loadTsFromFile(path string, delay int) []int {
 		}
 		panic_if_err(err)
 
-		ts, err := strconv.Atoi(record[0])
+		if len(record) <= 0 {
+			panic("CSV record must have at least one field")
+		}
+
+		timestamp, err := strconv.Atoi(record[0])
 		panic_if_err(err)
 
-		result = append(result, ts+delay)
+		ignored := len(record) > 1 && record[1] == "ignore"
+
+		if chunkCurrent == nil {
+			if ignored {
+				panic(fmt.Sprintf("Out of Chunk Ignored Marker %d", timestamp))
+			} else {
+				chunkCurrent = &Chunk{
+					Start: timestamp,
+				}
+			}
+		} else {
+			if ignored {
+				chunkCurrent.Ignored = append(chunkCurrent.Ignored, timestamp)
+			} else {
+				chunkCurrent.End = timestamp
+				chunkCurrent.Name = fmt.Sprintf("chunk-%02d.mp4", len(chunks))
+				chunks = append(chunks, *chunkCurrent)
+				chunkCurrent = nil
+			}
+		}
 	}
 
-	return result
+	if chunkCurrent != nil {
+		panic("Unclosed chunk detected! Please make sure that there is an even amount of not ignored markers")
+	}
+
+	return chunks
 }
 
-func ffmpegCutChunk(inputPath string, startSecs int, durationSecs int, outputPath string) error {
+func ffmpegCutChunk(inputPath string, chunk Chunk) error {
 	cmd := exec.Command(
 		"ffmpeg",
-		"-ss", strconv.Itoa(startSecs),
+		"-ss", strconv.Itoa(chunk.Start),
 		"-i", inputPath,
 		"-c", "copy",
-		"-t", strconv.Itoa(durationSecs),
-		outputPath)
+		"-t", strconv.Itoa(chunk.Duration(chunk.End)),
+		chunk.Name)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -94,27 +136,32 @@ func ffmpegConcatChunks(listPath string, outputPath string) {
 	panic_if_err(err)
 }
 
-func ffmpegGenerateConcatList(chunkNames []string, outputPath string) {
+func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) {
 	f, err := os.Create(outputPath)
 	panic_if_err(err)
 	defer f.Close()
 
-	for _, name := range chunkNames {
-		fmt.Fprintf(f, "file '%s'\n", name)
+	for _, chunk := range chunks {
+		fmt.Fprintf(f, "file '%s'\n", chunk.Name)
 	}
 }
 
 func usage() {
 	fmt.Printf("Usage: markut <SUBCOMMAND> [OPTIONS]\n")
 	fmt.Printf("SUBCOMMANDS:\n")
-	fmt.Printf("  final      Render the final video\n")
-	fmt.Printf("  chunk      Render specific chunk of the final video\n")
+	fmt.Printf("    final      Render the final video\n")
+	fmt.Printf("    chunk      Render specific chunk of the final video\n")
 }
 
 func subUsage(subName string, subFlag *flag.FlagSet) {
 	fmt.Printf("Usage: markut %s [OPTIONS]\n", subName)
 	fmt.Printf("OPTIONS:\n")
 	subFlag.PrintDefaults()
+}
+
+type Highlight struct {
+	timestamp string
+	message   string
 }
 
 func finalSubcommand(args []string) {
@@ -137,37 +184,38 @@ func finalSubcommand(args []string) {
 		os.Exit(1)
 	}
 
-	ts := loadTsFromFile(*csvPtr, *delayPtr)
-	n := len(ts)
-	if n%2 != 0 {
-		fmt.Printf("ERROR: The amount of markers must be even")
-		os.Exit(1)
-	}
+	chunks := loadChunksFromFile(*csvPtr, *delayPtr)
 
 	secs := 0
-	cutsTs := []string{}
-	chunkNames := []string{}
-	for i := 0; i < n/2; i += 1 {
-		start := ts[i*2+0]
-		end := ts[i*2+1]
-		duration := end - start
-		secs += duration
-		cutsTs = append(cutsTs, secsToTs(secs))
-		chunkName := fmt.Sprintf("chunk-%02d.mp4", i)
-		err := ffmpegCutChunk(*inputPtr, start, duration, chunkName)
-		if err != nil {
-			fmt.Printf("WARNING! Failed to cut chunk: %s", err)
+	highlights := []Highlight{}
+	for _, chunk := range chunks {
+		for _, ignored := range chunk.Ignored {
+			highlights = append(highlights, Highlight{
+				timestamp: secsToTs(secs + chunk.Duration(ignored)),
+				message:   "ignored",
+			})
 		}
-		chunkNames = append(chunkNames, chunkName)
+
+		highlights = append(highlights, Highlight{
+			timestamp: secsToTs(secs + chunk.Duration(chunk.End)),
+			message:   "cut",
+		})
+
+		secs += chunk.Duration(chunk.End)
+
+		err := ffmpegCutChunk(*inputPtr, chunk)
+		if err != nil {
+			fmt.Printf("WARNING: Failed to cut chunk: %s", err)
+		}
 	}
 
 	ourlistPath := "ourlist.txt"
-	ffmpegGenerateConcatList(chunkNames, ourlistPath)
+	ffmpegGenerateConcatList(chunks, ourlistPath)
 	ffmpegConcatChunks(ourlistPath, "output.mp4")
 
-	fmt.Println("Timestamps of cuts:")
-	for _, cut := range cutsTs {
-		fmt.Println(cut)
+	fmt.Println("Highlights:")
+	for _, highlight := range highlights {
+		fmt.Printf("%s - %s\n", highlight.timestamp, highlight.message)
 	}
 }
 
@@ -192,28 +240,23 @@ func chunkSubcommand(args []string) {
 		os.Exit(1)
 	}
 
-	ts := loadTsFromFile(*csvPtr, *delayPtr)
-	n := len(ts)
-	if n%2 != 0 {
-		fmt.Printf("ERROR: The amount of markers must be even")
+	chunks := loadChunksFromFile(*csvPtr, *delayPtr)
+
+	if *chunkPtr > len(chunks) {
+		fmt.Printf("ERROR: %d is incorrect chunk number. There is only %d of them.\n", *chunkPtr, len(chunks))
 		os.Exit(1)
 	}
 
-	chunkCount := n / 2
+	chunk := chunks[*chunkPtr]
 
-	if *chunkPtr > chunkCount {
-		fmt.Printf("ERROR: %d is incorrect chunk number. There is only %d of them.\n", *chunkPtr, chunkCount)
-		os.Exit(1)
-	}
-
-	start := ts[*chunkPtr*2+0]
-	end := ts[*chunkPtr*2+1]
-	duration := end - start
-	chunkName := fmt.Sprintf("chunk-%02d.mp4", *chunkPtr)
-	err := ffmpegCutChunk(*inputPtr, start, duration, chunkName)
+	err := ffmpegCutChunk(*inputPtr, chunk)
 	panic_if_err(err)
 
-	fmt.Printf("%s is rendered!\n", chunkName)
+	fmt.Printf("%s is rendered!\n", chunk.Name)
+	fmt.Printf("Ignored timestamps:\n")
+	for _, ignored := range chunk.Ignored {
+		fmt.Printf("  %s\n", secsToTs(chunk.Duration(ignored)))
+	}
 }
 
 func main() {
