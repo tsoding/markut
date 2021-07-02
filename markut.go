@@ -41,70 +41,70 @@ func secsToTs(secs int) string {
 }
 
 type Chunk struct {
-    Start int
-    End int
-    Ignored []int
-    Name string
+	Start   int
+	End     int
+	Ignored []int
+	Name    string
 }
 
-func(chunk Chunk) Duration(end int) int {
-    if (end < chunk.Start) {
-        panic("Assertion Failed: Incorrect end")
-    }
-    return end - chunk.Start;
+func (chunk Chunk) Duration(end int) int {
+	if end < chunk.Start {
+		panic("Assertion Failed: Incorrect end")
+	}
+	return end - chunk.Start
 }
 
 func loadChunksFromFile(path string, delay int) []Chunk {
-    f, err := os.Open(path)
-    panic_if_err(err)
-    defer f.Close()
+	f, err := os.Open(path)
+	panic_if_err(err)
+	defer f.Close()
 
-    r := csv.NewReader(f)
+	r := csv.NewReader(f)
 
-    var chunks []Chunk
-    var chunkCurrent *Chunk = nil
+	var chunks []Chunk
+	var chunkCurrent *Chunk = nil
 
-    for {
-        record, err := r.Read()
-        if err == io.EOF {
-            break
-        }
-        panic_if_err(err)
+	for {
+		record, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		panic_if_err(err)
 
-        if len(record) <= 0 {
-            panic("CSV record must have at least one field");
-        }
+		if len(record) <= 0 {
+			panic("CSV record must have at least one field")
+		}
 
-        timestamp, err := strconv.Atoi(record[0])
-        panic_if_err(err)
+		timestamp, err := strconv.Atoi(record[0])
+		panic_if_err(err)
 
-        ignored := len(record) > 1 && record[1] == "ignore"
+		ignored := len(record) > 1 && record[1] == "ignore"
 
-        if chunkCurrent == nil {
-            if ignored {
-                panic(fmt.Sprintf("Out of Chunk Ignored Marker %d", timestamp));
-            } else {
-                chunkCurrent = &Chunk {
-                    Start: timestamp,
-                }
-            }
-        } else {
-            if ignored {
-                chunkCurrent.Ignored = append(chunkCurrent.Ignored, timestamp)
-            } else {
-                chunkCurrent.End = timestamp
-                chunkCurrent.Name = fmt.Sprintf("chunk-%02d.mp4", len(chunks))
-                chunks = append(chunks, *chunkCurrent)
-                chunkCurrent = nil
-            }
-        }
-    }
+		if chunkCurrent == nil {
+			if ignored {
+				panic(fmt.Sprintf("Out of Chunk Ignored Marker %d", timestamp))
+			} else {
+				chunkCurrent = &Chunk{
+					Start: timestamp,
+				}
+			}
+		} else {
+			if ignored {
+				chunkCurrent.Ignored = append(chunkCurrent.Ignored, timestamp)
+			} else {
+				chunkCurrent.End = timestamp
+				chunkCurrent.Name = fmt.Sprintf("chunk-%02d.mp4", len(chunks))
+				chunks = append(chunks, *chunkCurrent)
+				chunkCurrent = nil
+			}
+		}
+	}
 
-    if chunkCurrent != nil {
-        panic("Unclosed chunk detected! Please make sure that there is an even amount of not ignored markers");
-    }
+	if chunkCurrent != nil {
+		panic("Unclosed chunk detected! Please make sure that there is an even amount of not ignored markers")
+	}
 
-    return chunks
+	return chunks
 }
 
 func ffmpegCutChunk(inputPath string, chunk Chunk) error {
@@ -160,8 +160,8 @@ func subUsage(subName string, subFlag *flag.FlagSet) {
 }
 
 type Highlight struct {
-    timestamp string;
-    message string;
+	timestamp string
+	message   string
 }
 
 func finalSubcommand(args []string) {
@@ -188,18 +188,18 @@ func finalSubcommand(args []string) {
 
 	secs := 0
 	highlights := []Highlight{}
-    for _, chunk := range chunks {
-        for _, ignored := range chunk.Ignored {
-            highlights = append(highlights, Highlight {
-                timestamp: secsToTs(secs + chunk.Duration(ignored)),
-                message: "ignored",
-            })
-        }
+	for _, chunk := range chunks {
+		for _, ignored := range chunk.Ignored {
+			highlights = append(highlights, Highlight{
+				timestamp: secsToTs(secs + chunk.Duration(ignored)),
+				message:   "ignored",
+			})
+		}
 
-		highlights = append(highlights, Highlight {
-            timestamp: secsToTs(secs + chunk.Duration(chunk.End)),
-            message: "cut",
-        })
+		highlights = append(highlights, Highlight{
+			timestamp: secsToTs(secs + chunk.Duration(chunk.End)),
+			message:   "cut",
+		})
 
 		secs += chunk.Duration(chunk.End)
 
@@ -247,16 +247,16 @@ func chunkSubcommand(args []string) {
 		os.Exit(1)
 	}
 
-    chunk := chunks[*chunkPtr];
+	chunk := chunks[*chunkPtr]
 
 	err := ffmpegCutChunk(*inputPtr, chunk)
 	panic_if_err(err)
 
 	fmt.Printf("%s is rendered!\n", chunk.Name)
-    fmt.Printf("Ignored timestamps:\n")
-    for _, ignored := range chunk.Ignored {
-        fmt.Printf("  %s\n", secsToTs(chunk.Duration(ignored)))
-    }
+	fmt.Printf("Ignored timestamps:\n")
+	for _, ignored := range chunk.Ignored {
+		fmt.Printf("  %s\n", secsToTs(chunk.Duration(ignored)))
+	}
 }
 
 func main() {
