@@ -151,6 +151,7 @@ func usage() {
 	fmt.Printf("SUBCOMMANDS:\n")
 	fmt.Printf("    final      Render the final video\n")
 	fmt.Printf("    chunk      Render specific chunk of the final video\n")
+	fmt.Printf("    inspect    Inspect markers in the CSV file\n")
 }
 
 func subUsage(subName string, subFlag *flag.FlagSet) {
@@ -162,6 +163,29 @@ func subUsage(subName string, subFlag *flag.FlagSet) {
 type Highlight struct {
 	timestamp string
 	message   string
+}
+
+func highlightChunks(chunks []Chunk) []Highlight {
+	secs := 0
+	highlights := []Highlight{}
+
+	for _, chunk := range chunks {
+		for _, ignored := range chunk.Ignored {
+			highlights = append(highlights, Highlight{
+				timestamp: secsToTs(secs + chunk.Duration(ignored)),
+				message:   "ignored",
+			})
+		}
+
+		highlights = append(highlights, Highlight{
+			timestamp: secsToTs(secs + chunk.Duration(chunk.End)),
+			message:   "cut",
+		})
+
+		secs += chunk.Duration(chunk.End)
+	}
+
+	return highlights
 }
 
 func finalSubcommand(args []string) {
@@ -185,24 +209,7 @@ func finalSubcommand(args []string) {
 	}
 
 	chunks := loadChunksFromFile(*csvPtr, *delayPtr)
-
-	secs := 0
-	highlights := []Highlight{}
 	for _, chunk := range chunks {
-		for _, ignored := range chunk.Ignored {
-			highlights = append(highlights, Highlight{
-				timestamp: secsToTs(secs + chunk.Duration(ignored)),
-				message:   "ignored",
-			})
-		}
-
-		highlights = append(highlights, Highlight{
-			timestamp: secsToTs(secs + chunk.Duration(chunk.End)),
-			message:   "cut",
-		})
-
-		secs += chunk.Duration(chunk.End)
-
 		err := ffmpegCutChunk(*inputPtr, chunk)
 		if err != nil {
 			fmt.Printf("WARNING: Failed to cut chunk: %s", err)
@@ -214,7 +221,7 @@ func finalSubcommand(args []string) {
 	ffmpegConcatChunks(ourlistPath, "output.mp4")
 
 	fmt.Println("Highlights:")
-	for _, highlight := range highlights {
+	for _, highlight := range highlightChunks(chunks) {
 		fmt.Printf("%s - %s\n", highlight.timestamp, highlight.message)
 	}
 }
@@ -253,9 +260,31 @@ func chunkSubcommand(args []string) {
 	panic_if_err(err)
 
 	fmt.Printf("%s is rendered!\n", chunk.Name)
-	fmt.Printf("Ignored timestamps:\n")
-	for _, ignored := range chunk.Ignored {
-		fmt.Printf("  %s\n", secsToTs(chunk.Duration(ignored)))
+	if len(chunk.Ignored) > 0 {
+		fmt.Printf("Ignored timestamps:\n")
+		for _, ignored := range chunk.Ignored {
+			fmt.Printf("  %s\n", secsToTs(chunk.Duration(ignored)))
+		}
+	}
+}
+
+func inspectSubcommand(args []string) {
+	inspectFlag := flag.NewFlagSet("inspect", flag.ExitOnError)
+	csvPtr := inspectFlag.String("csv", "", "Path to the CSV file with markers")
+	delayPtr := inspectFlag.Int("delay", 0, "Delay of markers in seconds")
+
+	inspectFlag.Parse(args)
+
+	if *csvPtr == "" {
+		subUsage("inspect", inspectFlag)
+		fmt.Printf("ERROR: No -csv file is provided\n")
+		os.Exit(1)
+	}
+
+	chunks := loadChunksFromFile(*csvPtr, *delayPtr)
+	fmt.Println("Highlights:")
+	for _, highlight := range highlightChunks(chunks) {
+		fmt.Printf("%s - %s\n", highlight.timestamp, highlight.message)
 	}
 }
 
@@ -271,6 +300,8 @@ func main() {
 		finalSubcommand(os.Args[2:])
 	case "chunk":
 		chunkSubcommand(os.Args[2:])
+	case "inspect":
+		inspectSubcommand(os.Args[2:])
 	default:
 		usage()
 		fmt.Printf("Unknown subcommand %s\n", os.Args[1])
