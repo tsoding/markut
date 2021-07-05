@@ -77,6 +77,7 @@ func loadChunksFromFile(path string, delay int) []Chunk {
 
 		timestamp, err := strconv.Atoi(record[0])
 		panic_if_err(err)
+		timestamp += delay
 
 		ignored := len(record) > 1 && record[1] == "ignore"
 
