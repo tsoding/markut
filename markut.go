@@ -108,28 +108,40 @@ func loadChunksFromFile(path string, delay int) []Chunk {
 	return chunks
 }
 
-func ffmpegCutChunk(inputPath string, chunk Chunk) error {
-	cmd := exec.Command(
-		"ffmpeg",
-		"-ss", strconv.Itoa(chunk.Start),
-		"-i", inputPath,
-		"-c", "copy",
-		"-t", strconv.Itoa(chunk.Duration(chunk.End)),
-		chunk.Name)
+func ffmpegCutChunk(inputPath string, chunk Chunk, y bool) error {
+	args := []string{}
+
+	if y {
+		args = append(args, "-y")
+	}
+
+	args = append(args, "-ss", strconv.Itoa(chunk.Start))
+	args = append(args, "-i", inputPath)
+	args = append(args, "-c", "copy")
+	args = append(args, "-t", strconv.Itoa(chunk.Duration(chunk.End)))
+	args = append(args, chunk.Name)
+
+	cmd := exec.Command("ffmpeg", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
-func ffmpegConcatChunks(listPath string, outputPath string) {
-	cmd := exec.Command(
-		"ffmpeg",
-		"-f", "concat",
-		"-safe", "0",
-		"-i", listPath,
-		"-c", "copy",
-		outputPath)
+func ffmpegConcatChunks(listPath string, outputPath string, y bool) {
+	args := []string{}
+
+	if y {
+		args = append(args, "-y")
+	}
+
+	args = append(args, "-f", "concat")
+	args = append(args, "-safe", "0")
+	args = append(args, "-i", listPath)
+	args = append(args, "-c", "copy")
+	args = append(args, outputPath)
+
+	cmd := exec.Command("ffmpeg", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -194,6 +206,7 @@ func finalSubcommand(args []string) {
 	csvPtr := finalFlag.String("csv", "", "Path to the CSV file with markers")
 	inputPtr := finalFlag.String("input", "", "Path to the input video file")
 	delayPtr := finalFlag.Int("delay", 0, "Delay of markers in seconds")
+	yPtr := finalFlag.Bool("y", false, "Pass -y to ffmpeg")
 
 	finalFlag.Parse(args)
 
@@ -211,7 +224,7 @@ func finalSubcommand(args []string) {
 
 	chunks := loadChunksFromFile(*csvPtr, *delayPtr)
 	for _, chunk := range chunks {
-		err := ffmpegCutChunk(*inputPtr, chunk)
+		err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
 		if err != nil {
 			fmt.Printf("WARNING: Failed to cut chunk: %s", err)
 		}
@@ -219,7 +232,7 @@ func finalSubcommand(args []string) {
 
 	ourlistPath := "ourlist.txt"
 	ffmpegGenerateConcatList(chunks, ourlistPath)
-	ffmpegConcatChunks(ourlistPath, "output.mp4")
+	ffmpegConcatChunks(ourlistPath, "output.mp4", *yPtr)
 
 	fmt.Println("Highlights:")
 	for _, highlight := range highlightChunks(chunks) {
@@ -233,6 +246,7 @@ func chunkSubcommand(args []string) {
 	inputPtr := chunkFlag.String("input", "", "Path to the input video file")
 	delayPtr := chunkFlag.Int("delay", 0, "Delay of markers in seconds")
 	chunkPtr := chunkFlag.Int("chunk", 0, "Chunk number to render")
+	yPtr := chunkFlag.Bool("y", false, "Pass -y to ffmpeg")
 
 	chunkFlag.Parse(args)
 
@@ -257,7 +271,7 @@ func chunkSubcommand(args []string) {
 
 	chunk := chunks[*chunkPtr]
 
-	err := ffmpegCutChunk(*inputPtr, chunk)
+	err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
 	panic_if_err(err)
 
 	fmt.Printf("%s is rendered!\n", chunk.Name)
