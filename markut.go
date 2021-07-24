@@ -297,9 +297,21 @@ func inspectSubcommand(args []string) {
 	}
 
 	chunks := loadChunksFromFile(*csvPtr, *delayPtr)
-	fmt.Println("Highlights:")
+	fmt.Println("Chunks:")
+	for _, chunk := range chunks {
+		fmt.Printf("  Name:  %s\n", chunk.Name)
+		fmt.Printf("  Start: %s (%d)\n", secsToTs(chunk.Start), chunk.Start)
+		fmt.Printf("  End:   %s (%d)\n", secsToTs(chunk.End), chunk.End)
+		fmt.Printf("  Ignored:\n")
+		for _, ignored := range chunk.Ignored {
+			fmt.Printf("    %s (%d)\n", secsToTs(ignored), ignored)
+		}
+		fmt.Printf("\n")
+	}
+
+	fmt.Println("Cuts:")
 	for _, highlight := range highlightChunks(chunks) {
-		fmt.Printf("%s - %s\n", highlight.timestamp, highlight.message)
+		fmt.Printf("  %s - %s\n", highlight.timestamp, highlight.message)
 	}
 }
 
