@@ -33,11 +33,22 @@ func tsToSecs(ts string) int {
 	return 60*60*hh + 60*mm + ss
 }
 
+func parseSecs(secs int) (hh int, mm int, ss int) {
+	hh = secs / 60 / 60
+	mm = secs / 60 % 60
+	ss = secs % 60
+	return
+}
+
 func secsToTs(secs int) string {
-	hh := secs / 60 / 60
-	mm := secs / 60 % 60
-	ss := secs % 60
+	hh, mm, ss := parseSecs(secs);
 	return fmt.Sprintf("%02d:%02d:%02d", hh, mm, ss)
+}
+
+// We may wanna migrate to VLC style timestamp throughout the entire codebase
+func secsToVlcTs(secs int) string {
+	hh, mm, ss := parseSecs(secs);
+	return fmt.Sprintf("%02dH:%02dm:%02ds", hh, mm, ss)
 }
 
 type Chunk struct {
@@ -193,13 +204,13 @@ func highlightChunks(chunks []Chunk) []Highlight {
 	for _, chunk := range chunks {
 		for _, ignored := range chunk.Ignored {
 			highlights = append(highlights, Highlight{
-				timestamp: secsToTs(secs + chunk.Duration(ignored)),
+				timestamp: secsToVlcTs(secs + chunk.Duration(ignored)),
 				message:   "ignored",
 			})
 		}
 
 		highlights = append(highlights, Highlight{
-			timestamp: secsToTs(secs + chunk.Duration(chunk.End)),
+			timestamp: secsToVlcTs(secs + chunk.Duration(chunk.End)),
 			message:   "cut",
 		})
 
