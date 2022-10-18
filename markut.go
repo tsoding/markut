@@ -12,13 +12,17 @@ import (
 	"path"
 )
 
+type Secs = float64
+
 func panic_if_err(err error) {
 	if err != nil {
 		panic(err)
 	}
 }
 
-func tsToSecs(ts string) int {
+func tsToSecs(ts string) Secs {
+	// TODO: if you make hours and minutes optional you can get rid of two incompatible timestamp formats
+	// [[hh:]mm:]<ss>.<ddd...>
 	comps := strings.Split(ts, ":")
 	if len(comps) != 3 {
 		panic("Expected 3 components in the timestamp")
@@ -28,45 +32,35 @@ func tsToSecs(ts string) int {
 	panic_if_err(err)
 	mm, err := strconv.Atoi(comps[1])
 	panic_if_err(err)
-	ss, err := strconv.Atoi(comps[2])
+	ss, err := strconv.ParseFloat(comps[2], 64)
 	panic_if_err(err)
 
-	return 60*60*hh + 60*mm + ss
+	return 60*60*Secs(hh) + 60*Secs(mm) + ss
 }
 
-func parseSecs(secs int) (hh int, mm int, ss int) {
-	hh = secs / 60 / 60
-	mm = secs / 60 % 60
-	ss = secs % 60
-	return
-}
-
+// TODO: Make secsToTs accept float instead of int
 func secsToTs(secs int) string {
-	hh, mm, ss := parseSecs(secs);
+	hh := secs / 60 / 60
+	mm := secs / 60 % 60
+	ss := secs % 60
 	return fmt.Sprintf("%02d:%02d:%02d", hh, mm, ss)
 }
 
-// We may wanna migrate to VLC style timestamp throughout the entire codebase
-func secsToVlcTs(secs int) string {
-	hh, mm, ss := parseSecs(secs);
-	return fmt.Sprintf("%02dH:%02dm:%02ds", hh, mm, ss)
-}
-
 type Chunk struct {
-	Start   int
-	End     int
-	Ignored []int
+	Start   Secs
+	End     Secs
+	Ignored []Secs
 	Name    string
 }
 
-func (chunk Chunk) Duration(end int) int {
+func (chunk Chunk) Duration(end Secs) Secs {
 	if end < chunk.Start {
 		panic("Assertion Failed: Incorrect end")
 	}
 	return end - chunk.Start
 }
 
-func loadChunksFromFile(path string, delay int, tsFmt tsFmt) []Chunk {
+func loadChunksFromFile(path string, delay Secs, tsFmt tsFmt) []Chunk {
 	f, err := os.Open(path)
 	panic_if_err(err)
 	defer f.Close()
@@ -87,10 +81,10 @@ func loadChunksFromFile(path string, delay int, tsFmt tsFmt) []Chunk {
 			panic("CSV record must have at least one field")
 		}
 
-		var timestamp int
+		var timestamp Secs
 		switch tsFmt {
 		case TS_FMT_SECS:
-			timestamp, err = strconv.Atoi(record[0])
+			timestamp, err = strconv.ParseFloat(record[0], 64)
 			panic_if_err(err)
 		case TS_FMT_HHMMSS:
 			timestamp = tsToSecs(record[0])
@@ -138,15 +132,14 @@ func ffmpegPathToBin() (ffmpegPath string) {
 }
 
 func logCmd(name string, args ...string) {
-	chunks := []string{name}
+	chunks := []string{}
+	chunks = append(chunks, name)
 	for _, arg := range args {
 		if strings.Contains(arg, " ") {
-			if strings.Contains(arg, " ") {
-				// TODO: use proper shell escaping instead of just wrapping with double quotes
-				chunks = append(chunks, "\""+arg+"\"")
-			} else {
-				chunks = append(chunks, arg)
-			}
+			// TODO: use proper shell escaping instead of just wrapping with double quotes
+			chunks = append(chunks, "\""+arg+"\"")
+		} else {
+			chunks = append(chunks, arg)
 		}
 	}
 	fmt.Printf("[CMD] %s\n", strings.Join(chunks, " "))
@@ -160,10 +153,10 @@ func ffmpegCutChunk(inputPath string, chunk Chunk, y bool) error {
 		args = append(args, "-y")
 	}
 
-	args = append(args, "-ss", strconv.Itoa(chunk.Start))
+	args = append(args, "-ss", strconv.FormatFloat(chunk.Start, 'f', -1, 64))
 	args = append(args, "-i", inputPath)
 	args = append(args, "-c", "copy")
-	args = append(args, "-t", strconv.Itoa(chunk.Duration(chunk.End)))
+	args = append(args, "-t", strconv.FormatFloat(chunk.Duration(chunk.End), 'f', -1, 64))
 	args = append(args, chunk.Name)
 
 	logCmd(ffmpeg, args...)
@@ -227,19 +220,19 @@ type Highlight struct {
 }
 
 func highlightChunks(chunks []Chunk) []Highlight {
-	secs := 0
+	secs := 0.0
 	highlights := []Highlight{}
 
 	for _, chunk := range chunks {
 		for _, ignored := range chunk.Ignored {
 			highlights = append(highlights, Highlight{
-				timestamp: secsToVlcTs(secs + chunk.Duration(ignored)),
+				timestamp: secsToTs(int(secs + chunk.Duration(ignored))),
 				message:   "ignored",
 			})
 		}
 
 		highlights = append(highlights, Highlight{
-			timestamp: secsToVlcTs(secs + chunk.Duration(chunk.End)),
+			timestamp: secsToTs(int(secs + chunk.Duration(chunk.End))),
 			message:   "cut",
 		})
 
@@ -253,7 +246,7 @@ func finalSubcommand(args []string) {
 	finalFlag := flag.NewFlagSet("final", flag.ExitOnError)
 	csvPtr := finalFlag.String("csv", "", "Path to the CSV file with markers")
 	inputPtr := finalFlag.String("input", "", "Path to the input video file")
-	delayPtr := finalFlag.Int("delay", 0, "Delay of markers in seconds")
+	delayPtr := finalFlag.Float64("delay", 0, "Delay of markers in seconds")
 	yPtr := finalFlag.Bool("y", false, "Pass -y to ffmpeg")
 	tsFmtNamePtr := finalFlag.String("ts-fmt", tsFmtNames[TS_FMT_SECS], "Format of the timestamps. Possible values: "+strings.Join(tsFmtNames[:], ", "))
 
@@ -282,7 +275,7 @@ func finalSubcommand(args []string) {
 	for _, chunk := range chunks {
 		err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
 		if err != nil {
-			fmt.Printf("WARNING: Failed to cut chunk: %s", err)
+			fmt.Printf("WARNING: Failed to cut chunk: %s\n", err)
 		}
 	}
 
@@ -300,7 +293,7 @@ func chunkSubcommand(args []string) {
 	chunkFlag := flag.NewFlagSet("chunk", flag.ExitOnError)
 	csvPtr := chunkFlag.String("csv", "", "Path to the CSV file with markers")
 	inputPtr := chunkFlag.String("input", "", "Path to the input video file")
-	delayPtr := chunkFlag.Int("delay", 0, "Delay of markers in seconds")
+	delayPtr := chunkFlag.Float64("delay", 0, "Delay of markers in seconds")
 	chunkPtr := chunkFlag.Int("chunk", 0, "Chunk number to render")
 	yPtr := chunkFlag.Bool("y", false, "Pass -y to ffmpeg")
 	tsFmtNamePtr := chunkFlag.String("ts-fmt", tsFmtNames[TS_FMT_SECS], "Format of the timestamps. Possible values: "+strings.Join(tsFmtNames[:], ", "))
@@ -342,7 +335,7 @@ func chunkSubcommand(args []string) {
 	if len(chunk.Ignored) > 0 {
 		fmt.Printf("Ignored timestamps:\n")
 		for _, ignored := range chunk.Ignored {
-			fmt.Printf("  %s\n", secsToTs(chunk.Duration(ignored)))
+			fmt.Printf("  %s\n", secsToTs(int(chunk.Duration(ignored))))
 		}
 	}
 }
@@ -371,7 +364,7 @@ func tsFmtByName(needle string) (tsFmt, bool) {
 func inspectSubcommand(args []string) {
 	inspectFlag := flag.NewFlagSet("inspect", flag.ExitOnError)
 	csvPtr := inspectFlag.String("csv", "", "Path to the CSV file with markers")
-	delayPtr := inspectFlag.Int("delay", 0, "Delay of markers in seconds")
+	delayPtr := inspectFlag.Float64("delay", 0, "Delay of markers in seconds")
 	tsFmtNamePtr := inspectFlag.String("ts-fmt", tsFmtNames[TS_FMT_SECS], "Format of the timestamps. Possible values: "+strings.Join(tsFmtNames[:], ", "))
 
 	inspectFlag.Parse(args)
@@ -393,11 +386,11 @@ func inspectSubcommand(args []string) {
 	fmt.Println("Chunks:")
 	for _, chunk := range chunks {
 		fmt.Printf("  Name:  %s\n", chunk.Name)
-		fmt.Printf("  Start: %s (%d)\n", secsToTs(chunk.Start), chunk.Start)
-		fmt.Printf("  End:   %s (%d)\n", secsToTs(chunk.End), chunk.End)
+		fmt.Printf("  Start: %s (%s)\n", secsToTs(int(chunk.Start)), strconv.FormatFloat(chunk.Start, 'f', -1, 64))
+		fmt.Printf("  End:   %s (%s)\n", secsToTs(int(chunk.End)), strconv.FormatFloat(chunk.End, 'f', -1, 64))
 		fmt.Printf("  Ignored:\n")
 		for _, ignored := range chunk.Ignored {
-			fmt.Printf("    %s (%d)\n", secsToTs(ignored), ignored)
+			fmt.Printf("    %s (%d)\n", secsToTs(int(ignored)), ignored)
 		}
 		fmt.Printf("\n")
 	}
@@ -428,3 +421,5 @@ func main() {
 		os.Exit(1)
 	}
 }
+// TODO: add support for initial fixup of the input
+// https://github.com/tsoding/tsoding-tools/blob/7dbae4e03e8367a28d983aeb812443e112b8c304/ffmpeg-edit/templates/Makefile.jinja2#L15-L16
