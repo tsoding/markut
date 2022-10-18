@@ -137,7 +137,23 @@ func ffmpegPathToBin() (ffmpegPath string) {
 	return
 }
 
+func logCmd(name string, args ...string) {
+	chunks := []string{name}
+	for _, arg := range args {
+		if strings.Contains(arg, " ") {
+			if strings.Contains(arg, " ") {
+				// TODO: use proper shell escaping instead of just wrapping with double quotes
+				chunks = append(chunks, "\""+arg+"\"")
+			} else {
+				chunks = append(chunks, arg)
+			}
+		}
+	}
+	fmt.Printf("[CMD] %s\n", strings.Join(chunks, " "))
+}
+
 func ffmpegCutChunk(inputPath string, chunk Chunk, y bool) error {
+	ffmpeg := ffmpegPathToBin()
 	args := []string{}
 
 	if y {
@@ -150,7 +166,8 @@ func ffmpegCutChunk(inputPath string, chunk Chunk, y bool) error {
 	args = append(args, "-t", strconv.Itoa(chunk.Duration(chunk.End)))
 	args = append(args, chunk.Name)
 
-	cmd := exec.Command(ffmpegPathToBin(), args...)
+	logCmd(ffmpeg, args...)
+	cmd := exec.Command(ffmpeg, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -158,6 +175,7 @@ func ffmpegCutChunk(inputPath string, chunk Chunk, y bool) error {
 }
 
 func ffmpegConcatChunks(listPath string, outputPath string, y bool) {
+	ffmpeg := ffmpegPathToBin()
 	args := []string{}
 
 	if y {
@@ -170,7 +188,8 @@ func ffmpegConcatChunks(listPath string, outputPath string, y bool) {
 	args = append(args, "-c", "copy")
 	args = append(args, outputPath)
 
-	cmd := exec.Command(ffmpegPathToBin(), args...)
+	logCmd(ffmpeg, args...)
+	cmd := exec.Command(ffmpeg, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
