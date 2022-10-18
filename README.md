@@ -52,3 +52,7 @@ You can inspect the final cuts without rendering anything by using `markut inspe
 ```console
 $ ./markut inspect -csv marks.csv -delay 4
 ```
+
+## Environment Variables
+
+- `FFMPEG_PREFIX` - if the variable is defined then markut uses `$FFMPEG_PREFIX/bin/ffmpeg` as the path to ffmpeg.

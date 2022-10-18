@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"path"
 )
 
 func panic_if_err(err error) {
@@ -127,6 +128,15 @@ func loadChunksFromFile(path string, delay int, tsFmt tsFmt) []Chunk {
 	return chunks
 }
 
+func ffmpegPathToBin() (ffmpegPath string) {
+	ffmpegPath = "ffmpeg"
+	ffmpegPrefix, ok := os.LookupEnv("FFMPEG_PREFIX")
+	if ok {
+		ffmpegPath = path.Join(ffmpegPrefix, "bin", "ffmpeg")
+	}
+	return
+}
+
 func ffmpegCutChunk(inputPath string, chunk Chunk, y bool) error {
 	args := []string{}
 
@@ -140,7 +150,7 @@ func ffmpegCutChunk(inputPath string, chunk Chunk, y bool) error {
 	args = append(args, "-t", strconv.Itoa(chunk.Duration(chunk.End)))
 	args = append(args, chunk.Name)
 
-	cmd := exec.Command("ffmpeg", args...)
+	cmd := exec.Command(ffmpegPathToBin(), args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -160,7 +170,7 @@ func ffmpegConcatChunks(listPath string, outputPath string, y bool) {
 	args = append(args, "-c", "copy")
 	args = append(args, outputPath)
 
-	cmd := exec.Command("ffmpeg", args...)
+	cmd := exec.Command(ffmpegPathToBin(), args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
