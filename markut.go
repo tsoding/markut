@@ -190,6 +190,28 @@ func ffmpegConcatChunks(listPath string, outputPath string, y bool) {
 	panic_if_err(err)
 }
 
+func ffmpegFixupInput(inputPath, outputPath string, y bool) {
+	ffmpeg := ffmpegPathToBin()
+	args := []string{}
+
+	if y {
+		args = append(args, "-y")
+	}
+
+	// ffmpeg -y -i {{ morning_input }} -codec copy -bsf:v h264_mp4toannexb {{ morning_input }}.fixed.ts
+	args = append(args, "-i", inputPath)
+	args = append(args, "-codec", "copy")
+	args = append(args, "-bsf:v", "h264_mp4toannexb")
+	args = append(args, outputPath)
+	logCmd(ffmpeg, args...)
+	cmd := exec.Command(ffmpeg, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	panic_if_err(err)
+}
+
 func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) {
 	f, err := os.Create(outputPath)
 	panic_if_err(err)
@@ -401,6 +423,24 @@ func inspectSubcommand(args []string) {
 	}
 }
 
+func fixupSubcommand(args []string) {
+	fixupFlag := flag.NewFlagSet("fixup", flag.ExitOnError)
+	inputPtr := fixupFlag.String("input", "", "Path to the input video file")
+	yPtr := fixupFlag.Bool("y", false, "Pass -y to ffmpeg")
+
+	fixupFlag.Parse(args)
+
+	if *inputPtr == "" {
+		subUsage(fixupFlag)
+		fmt.Printf("ERROR: No -input file is provided\n")
+		os.Exit(1)
+	}
+
+	outputPath := "input.ts"
+	ffmpegFixupInput(*inputPtr, outputPath, *yPtr)
+	fmt.Printf("Generated %s\n", outputPath)
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -415,11 +455,11 @@ func main() {
 		chunkSubcommand(os.Args[2:])
 	case "inspect":
 		inspectSubcommand(os.Args[2:])
+	case "fixup":
+		fixupSubcommand(os.Args[2:])
 	default:
 		usage()
 		fmt.Printf("Unknown subcommand %s\n", os.Args[1])
 		os.Exit(1)
 	}
 }
-// TODO: add support for initial fixup of the input
-// https://github.com/tsoding/tsoding-tools/blob/7dbae4e03e8367a28d983aeb812443e112b8c304/ffmpeg-edit/templates/Makefile.jinja2#L15-L16
