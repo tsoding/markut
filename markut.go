@@ -265,30 +265,30 @@ func highlightChunks(chunks []Chunk) []Highlight {
 }
 
 func finalSubcommand(args []string) {
-	finalFlag := flag.NewFlagSet("final", flag.ExitOnError)
-	csvPtr := finalFlag.String("csv", "", "Path to the CSV file with markers")
-	inputPtr := finalFlag.String("input", "", "Path to the input video file")
-	delayPtr := finalFlag.Float64("delay", 0, "Delay of markers in seconds")
-	yPtr := finalFlag.Bool("y", false, "Pass -y to ffmpeg")
-	tsFmtNamePtr := finalFlag.String("ts-fmt", tsFmtNames[TS_FMT_SECS], "Format of the timestamps. Possible values: "+strings.Join(tsFmtNames[:], ", "))
+	subFlag := flag.NewFlagSet("final", flag.ExitOnError)
+	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers")
+	inputPtr := subFlag.String("input", "", "Path to the input video file")
+	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
+	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
+	tsFmtNamePtr := subFlag.String("ts-fmt", tsFmtNames[TS_FMT_SECS], "Format of the timestamps. Possible values: "+strings.Join(tsFmtNames[:], ", "))
 
-	finalFlag.Parse(args)
+	subFlag.Parse(args)
 
 	tsFmt, ok := tsFmtByName(*tsFmtNamePtr)
 	if !ok {
-		subUsage(finalFlag)
+		subUsage(subFlag)
 		fmt.Printf("ERROR: -ts-fmt: unknown timestamp format name `%s`\n", *tsFmtNamePtr)
 		os.Exit(1)
 	}
 
 	if *csvPtr == "" {
-		subUsage(finalFlag)
+		subUsage(subFlag)
 		fmt.Printf("ERROR: No -csv file is provided\n")
 		os.Exit(1)
 	}
 
 	if *inputPtr == "" {
-		subUsage(finalFlag)
+		subUsage(subFlag)
 		fmt.Printf("ERROR: No -input file is provided\n")
 		os.Exit(1)
 	}
@@ -312,31 +312,31 @@ func finalSubcommand(args []string) {
 }
 
 func chunkSubcommand(args []string) {
-	chunkFlag := flag.NewFlagSet("chunk", flag.ExitOnError)
-	csvPtr := chunkFlag.String("csv", "", "Path to the CSV file with markers")
-	inputPtr := chunkFlag.String("input", "", "Path to the input video file")
-	delayPtr := chunkFlag.Float64("delay", 0, "Delay of markers in seconds")
-	chunkPtr := chunkFlag.Int("chunk", 0, "Chunk number to render")
-	yPtr := chunkFlag.Bool("y", false, "Pass -y to ffmpeg")
-	tsFmtNamePtr := chunkFlag.String("ts-fmt", tsFmtNames[TS_FMT_SECS], "Format of the timestamps. Possible values: "+strings.Join(tsFmtNames[:], ", "))
+	subFlag := flag.NewFlagSet("chunk", flag.ExitOnError)
+	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers")
+	inputPtr := subFlag.String("input", "", "Path to the input video file")
+	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
+	chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
+	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
+	tsFmtNamePtr := subFlag.String("ts-fmt", tsFmtNames[TS_FMT_SECS], "Format of the timestamps. Possible values: "+strings.Join(tsFmtNames[:], ", "))
 
-	chunkFlag.Parse(args)
+	subFlag.Parse(args)
 
 	tsFmt, ok := tsFmtByName(*tsFmtNamePtr)
 	if !ok {
-		subUsage(chunkFlag)
+		subUsage(subFlag)
 		fmt.Printf("ERROR: -ts-fmt: unknown timestamp format name `%s`\n", *tsFmtNamePtr)
 		os.Exit(1)
 	}
 
 	if *csvPtr == "" {
-		subUsage(chunkFlag)
+		subUsage(subFlag)
 		fmt.Printf("ERROR: No -csv file is provided\n")
 		os.Exit(1)
 	}
 
 	if *inputPtr == "" {
-		subUsage(chunkFlag)
+		subUsage(subFlag)
 		fmt.Printf("ERROR: No -input file is provided\n")
 		os.Exit(1)
 	}
@@ -384,22 +384,22 @@ func tsFmtByName(needle string) (tsFmt, bool) {
 }
 
 func inspectSubcommand(args []string) {
-	inspectFlag := flag.NewFlagSet("inspect", flag.ExitOnError)
-	csvPtr := inspectFlag.String("csv", "", "Path to the CSV file with markers")
-	delayPtr := inspectFlag.Float64("delay", 0, "Delay of markers in seconds")
-	tsFmtNamePtr := inspectFlag.String("ts-fmt", tsFmtNames[TS_FMT_SECS], "Format of the timestamps. Possible values: "+strings.Join(tsFmtNames[:], ", "))
+	subFlag := flag.NewFlagSet("inspect", flag.ExitOnError)
+	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers")
+	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
+	tsFmtNamePtr := subFlag.String("ts-fmt", tsFmtNames[TS_FMT_SECS], "Format of the timestamps. Possible values: "+strings.Join(tsFmtNames[:], ", "))
 
-	inspectFlag.Parse(args)
+	subFlag.Parse(args)
 
 	tsFmt, ok := tsFmtByName(*tsFmtNamePtr)
 	if !ok {
-		subUsage(inspectFlag)
+		subUsage(subFlag)
 		fmt.Printf("ERROR: -ts-fmt: unknown timestamp format name `%s`\n", *tsFmtNamePtr)
 		os.Exit(1)
 	}
 
 	if *csvPtr == "" {
-		subUsage(inspectFlag)
+		subUsage(subFlag)
 		fmt.Printf("ERROR: No -csv file is provided\n")
 		os.Exit(1)
 	}
@@ -424,14 +424,14 @@ func inspectSubcommand(args []string) {
 }
 
 func fixupSubcommand(args []string) {
-	fixupFlag := flag.NewFlagSet("fixup", flag.ExitOnError)
-	inputPtr := fixupFlag.String("input", "", "Path to the input video file")
-	yPtr := fixupFlag.Bool("y", false, "Pass -y to ffmpeg")
+	subFlag := flag.NewFlagSet("fixup", flag.ExitOnError)
+	inputPtr := subFlag.String("input", "", "Path to the input video file")
+	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
-	fixupFlag.Parse(args)
+	subFlag.Parse(args)
 
 	if *inputPtr == "" {
-		subUsage(fixupFlag)
+		subUsage(subFlag)
 		fmt.Printf("ERROR: No -input file is provided\n")
 		os.Exit(1)
 	}
