@@ -14,28 +14,22 @@ import (
 
 type Secs = float64
 
-func panic_if_err(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
-func tsToSecs(ts string) Secs {
+func tsToSecs(ts string) (Secs, error) {
 	// TODO: if you make hours and minutes optional you can get rid of two incompatible timestamp formats
 	// [[hh:]mm:]<ss>.<ddd...>
 	comps := strings.Split(ts, ":")
 	if len(comps) != 3 {
-		panic("Expected 3 components in the timestamp")
+		return 0, fmt.Errorf("Expected 3 components in the timestamp")
 	}
 
 	hh, err := strconv.Atoi(comps[0])
-	panic_if_err(err)
+	if err != nil { return 0, err }
 	mm, err := strconv.Atoi(comps[1])
-	panic_if_err(err)
+	if err != nil { return 0, err }
 	ss, err := strconv.ParseFloat(comps[2], 64)
-	panic_if_err(err)
+	if err != nil { return 0, err }
 
-	return 60*60*Secs(hh) + 60*Secs(mm) + ss
+	return 60*60*Secs(hh) + 60*Secs(mm) + ss, nil
 }
 
 // TODO: Make secsToTs accept float instead of int
@@ -55,19 +49,23 @@ type Chunk struct {
 
 func (chunk Chunk) Duration(end Secs) Secs {
 	if end < chunk.Start {
+		// TODO: this assertion should be a runtime error
 		panic("Assertion Failed: Incorrect end")
 	}
 	return end - chunk.Start
 }
 
-func loadChunksFromFile(path string, delay Secs, tsFmt tsFmt) []Chunk {
+func loadChunksFromFile(path string, delay Secs, tsFmt tsFmt) ([]Chunk, error) {
+	var chunks []Chunk
+
 	f, err := os.Open(path)
-	panic_if_err(err)
+	if err != nil {
+		return chunks, err
+	}
 	defer f.Close()
 
 	r := csv.NewReader(f)
 
-	var chunks []Chunk
 	var chunkCurrent *Chunk = nil
 
 	for {
@@ -75,19 +73,25 @@ func loadChunksFromFile(path string, delay Secs, tsFmt tsFmt) []Chunk {
 		if err == io.EOF {
 			break
 		}
-		panic_if_err(err)
-
+		if err != nil {
+			return chunks, err
+		}
 		if len(record) <= 0 {
-			panic("CSV record must have at least one field")
+			return chunks, fmt.Errorf("CSV record must have at least one field")
 		}
 
 		var timestamp Secs
 		switch tsFmt {
 		case TS_FMT_SECS:
 			timestamp, err = strconv.ParseFloat(record[0], 64)
-			panic_if_err(err)
+			if err != nil {
+				return chunks, err
+			}
 		case TS_FMT_HHMMSS:
-			timestamp = tsToSecs(record[0])
+			timestamp, err = tsToSecs(record[0])
+			if err != nil {
+				return chunks, err
+			}
 		default:
 			panic("unreachable")
 		}
@@ -97,7 +101,7 @@ func loadChunksFromFile(path string, delay Secs, tsFmt tsFmt) []Chunk {
 
 		if chunkCurrent == nil {
 			if ignored {
-				panic(fmt.Sprintf("Out of Chunk Ignored Marker %d", timestamp))
+				return chunks, fmt.Errorf("Out of Chunk Ignored Marker %d", timestamp)
 			} else {
 				chunkCurrent = &Chunk{
 					Start: timestamp,
@@ -116,10 +120,10 @@ func loadChunksFromFile(path string, delay Secs, tsFmt tsFmt) []Chunk {
 	}
 
 	if chunkCurrent != nil {
-		panic("Unclosed chunk detected! Please make sure that there is an even amount of not ignored markers")
+		return chunks, fmt.Errorf("Unclosed chunk detected! Please make sure that there is an even amount of not ignored markers")
 	}
 
-	return chunks
+	return chunks, nil
 }
 
 func ffmpegPathToBin() (ffmpegPath string) {
@@ -167,7 +171,7 @@ func ffmpegCutChunk(inputPath string, chunk Chunk, y bool) error {
 	return cmd.Run()
 }
 
-func ffmpegConcatChunks(listPath string, outputPath string, y bool) {
+func ffmpegConcatChunks(listPath string, outputPath string, y bool) error {
 	ffmpeg := ffmpegPathToBin()
 	args := []string{}
 
@@ -186,11 +190,10 @@ func ffmpegConcatChunks(listPath string, outputPath string, y bool) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	panic_if_err(err)
+	return cmd.Run()
 }
 
-func ffmpegFixupInput(inputPath, outputPath string, y bool) {
+func ffmpegFixupInput(inputPath, outputPath string, y bool) error {
 	ffmpeg := ffmpegPathToBin()
 	args := []string{}
 
@@ -208,26 +211,21 @@ func ffmpegFixupInput(inputPath, outputPath string, y bool) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	panic_if_err(err)
+	return cmd.Run()
 }
 
-func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) {
+func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) error {
 	f, err := os.Create(outputPath)
-	panic_if_err(err)
+	if err != nil {
+		return err
+	}
 	defer f.Close()
 
 	for _, chunk := range chunks {
 		fmt.Fprintf(f, "file '%s'\n", chunk.Name)
 	}
-}
 
-func usage() {
-	fmt.Printf("Usage: markut <SUBCOMMAND> [OPTIONS]\n")
-	fmt.Printf("SUBCOMMANDS:\n")
-	fmt.Printf("    final      Render the final video\n")
-	fmt.Printf("    chunk      Render specific chunk of the final video\n")
-	fmt.Printf("    inspect    Inspect markers in the CSV file\n")
+	return nil
 }
 
 func subUsage(subFlag *flag.FlagSet) {
@@ -293,7 +291,11 @@ func finalSubcommand(args []string) {
 		os.Exit(1)
 	}
 
-	chunks := loadChunksFromFile(*csvPtr, *delayPtr, tsFmt)
+	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr, tsFmt)
+	if err != nil {
+		fmt.Printf("ERROR: Could not load chunks: %s\n", err)
+		os.Exit(1)
+	}
 	for _, chunk := range chunks {
 		err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
 		if err != nil {
@@ -341,7 +343,11 @@ func chunkSubcommand(args []string) {
 		os.Exit(1)
 	}
 
-	chunks := loadChunksFromFile(*csvPtr, *delayPtr, tsFmt)
+	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr, tsFmt)
+	if err != nil {
+		fmt.Printf("ERROR: could not load chunks: %s\n", err)
+		os.Exit(1)
+	}
 
 	if *chunkPtr > len(chunks) {
 		fmt.Printf("ERROR: %d is incorrect chunk number. There is only %d of them.\n", *chunkPtr, len(chunks))
@@ -350,8 +356,11 @@ func chunkSubcommand(args []string) {
 
 	chunk := chunks[*chunkPtr]
 
-	err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
-	panic_if_err(err)
+	err = ffmpegCutChunk(*inputPtr, chunk, *yPtr)
+	if err != nil {
+		fmt.Printf("ERROR: could not cut the chunk: %s\n", err)
+		os.Exit(1)
+	}
 
 	fmt.Printf("%s is rendered!\n", chunk.Name)
 	if len(chunk.Ignored) > 0 {
@@ -404,7 +413,11 @@ func inspectSubcommand(args []string) {
 		os.Exit(1)
 	}
 
-	chunks := loadChunksFromFile(*csvPtr, *delayPtr, tsFmt)
+	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr, tsFmt)
+	if err != nil {
+		fmt.Printf("ERROR: could not load chunks: %s\n", err)
+		os.Exit(1)
+	}
 	fmt.Println("Chunks:")
 	for _, chunk := range chunks {
 		fmt.Printf("  Name:  %s\n", chunk.Name)
@@ -441,6 +454,40 @@ func fixupSubcommand(args []string) {
 	fmt.Printf("Generated %s\n", outputPath)
 }
 
+type Subcommand struct {
+	Run func(args []string)
+	Description string
+}
+
+var Subcommands = map[string]Subcommand{
+	"final": Subcommand{
+		Run: finalSubcommand,
+		Description: "Render the final video",
+	},
+	"chunk": Subcommand{
+		Run: chunkSubcommand,
+		Description: "Render specific chunk of the final video",
+	},
+	"inspect": Subcommand{
+		Run: inspectSubcommand,
+		Description: "Inspect markers in the CSV file",
+	},
+	"fixup": Subcommand{
+		Run: fixupSubcommand,
+		Description: "Fixup the initial footage",
+	},
+}
+
+func usage() {
+	fmt.Printf("Usage: markut <SUBCOMMAND> [OPTIONS]\n")
+	fmt.Printf("SUBCOMMANDS:\n")
+	for name, subcommands := range Subcommands {
+		fmt.Printf("    %s      %s\n", name, subcommands.Description);
+	}
+	fmt.Printf("ENVARS:\n")
+	fmt.Printf("    FFMPEG_PREFIX      Prefix path for a custom ffmpeg distribution\n")
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -448,18 +495,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	switch os.Args[1] {
-	case "final":
-		finalSubcommand(os.Args[2:])
-	case "chunk":
-		chunkSubcommand(os.Args[2:])
-	case "inspect":
-		inspectSubcommand(os.Args[2:])
-	case "fixup":
-		fixupSubcommand(os.Args[2:])
-	default:
+	if subcommand, ok := Subcommands[os.Args[1]]; ok {
+		subcommand.Run(os.Args[2:])
+	} else {
 		usage()
-		fmt.Printf("Unknown subcommand %s\n", os.Args[1])
+		fmt.Printf("ERROR: Unknown subcommand %s\n", os.Args[1])
 		os.Exit(1)
 	}
 }
