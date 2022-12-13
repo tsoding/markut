@@ -15,21 +15,25 @@ import (
 type Secs = float64
 
 func tsToSecs(ts string) (Secs, error) {
-	// TODO: if you make hours and minutes optional you can get rid of two incompatible timestamp formats
-	// [[hh:]mm:]<ss>.<ddd...>
-	comps := strings.Split(ts, ":")
-	if len(comps) != 3 {
-		return 0, fmt.Errorf("Expected 3 components in the timestamp")
+	var err error = nil
+	var mm, hh int = 0, 0
+	var ss Secs = 0
+	switch comps := strings.Split(ts, ":"); len(comps) {
+	case 3:
+		hh, err = strconv.Atoi(comps[0])
+		if err != nil { return 0, err }
+		fallthrough
+	case 2:
+		mm, err = strconv.Atoi(comps[1])
+		if err != nil { return 0, err }
+		fallthrough
+	case 1:
+		ss, err = strconv.ParseFloat(comps[2], 64)
+		if err != nil { return 0, err }
+		return 60*60*Secs(hh) + 60*Secs(mm) + ss, nil
+	default:
+		return 0, fmt.Errorf("Unexpected amount of components in the timestamp (%d)", len(comps))
 	}
-
-	hh, err := strconv.Atoi(comps[0])
-	if err != nil { return 0, err }
-	mm, err := strconv.Atoi(comps[1])
-	if err != nil { return 0, err }
-	ss, err := strconv.ParseFloat(comps[2], 64)
-	if err != nil { return 0, err }
-
-	return 60*60*Secs(hh) + 60*Secs(mm) + ss, nil
 }
 
 // TODO: Make secsToTs accept float instead of int
@@ -55,7 +59,7 @@ func (chunk Chunk) Duration(end Secs) Secs {
 	return end - chunk.Start
 }
 
-func loadChunksFromFile(path string, delay Secs, tsFmt tsFmt) ([]Chunk, error) {
+func loadChunksFromFile(path string, delay Secs) ([]Chunk, error) {
 	var chunks []Chunk
 
 	f, err := os.Open(path)
@@ -80,21 +84,11 @@ func loadChunksFromFile(path string, delay Secs, tsFmt tsFmt) ([]Chunk, error) {
 			return chunks, fmt.Errorf("CSV record must have at least one field")
 		}
 
-		var timestamp Secs
-		switch tsFmt {
-		case TS_FMT_SECS:
-			timestamp, err = strconv.ParseFloat(record[0], 64)
-			if err != nil {
-				return chunks, err
-			}
-		case TS_FMT_HHMMSS:
-			timestamp, err = tsToSecs(record[0])
-			if err != nil {
-				return chunks, err
-			}
-		default:
-			panic("unreachable")
+		timestamp, err := tsToSecs(record[0])
+		if err != nil {
+			return chunks, err
 		}
+
 		timestamp += delay
 
 		ignored := len(record) > 1 && record[1] == "ignore"
@@ -268,16 +262,8 @@ func finalSubcommand(args []string) {
 	inputPtr := subFlag.String("input", "", "Path to the input video file")
 	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
-	tsFmtNamePtr := subFlag.String("ts-fmt", tsFmtNames[TS_FMT_SECS], "Format of the timestamps. Possible values: "+strings.Join(tsFmtNames[:], ", "))
 
 	subFlag.Parse(args)
-
-	tsFmt, ok := tsFmtByName(*tsFmtNamePtr)
-	if !ok {
-		subUsage(subFlag)
-		fmt.Printf("ERROR: -ts-fmt: unknown timestamp format name `%s`\n", *tsFmtNamePtr)
-		os.Exit(1)
-	}
 
 	if *csvPtr == "" {
 		subUsage(subFlag)
@@ -291,7 +277,7 @@ func finalSubcommand(args []string) {
 		os.Exit(1)
 	}
 
-	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr, tsFmt)
+	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
 	if err != nil {
 		fmt.Printf("ERROR: Could not load chunks: %s\n", err)
 		os.Exit(1)
@@ -320,16 +306,8 @@ func chunkSubcommand(args []string) {
 	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 	chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
-	tsFmtNamePtr := subFlag.String("ts-fmt", tsFmtNames[TS_FMT_SECS], "Format of the timestamps. Possible values: "+strings.Join(tsFmtNames[:], ", "))
 
 	subFlag.Parse(args)
-
-	tsFmt, ok := tsFmtByName(*tsFmtNamePtr)
-	if !ok {
-		subUsage(subFlag)
-		fmt.Printf("ERROR: -ts-fmt: unknown timestamp format name `%s`\n", *tsFmtNamePtr)
-		os.Exit(1)
-	}
 
 	if *csvPtr == "" {
 		subUsage(subFlag)
@@ -343,7 +321,7 @@ func chunkSubcommand(args []string) {
 		os.Exit(1)
 	}
 
-	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr, tsFmt)
+	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
 	if err != nil {
 		fmt.Printf("ERROR: could not load chunks: %s\n", err)
 		os.Exit(1)
@@ -371,41 +349,12 @@ func chunkSubcommand(args []string) {
 	}
 }
 
-type tsFmt = int
-const (
-	TS_FMT_SECS=iota
-	TS_FMT_HHMMSS=iota
-	COUNT_TS_FMTS=iota
-)
-
-var tsFmtNames = [COUNT_TS_FMTS]string{
-	TS_FMT_SECS: "secs",
-	TS_FMT_HHMMSS: "hhmmss",
-}
-
-func tsFmtByName(needle string) (tsFmt, bool) {
-	for index, name := range tsFmtNames {
-		if needle == name {
-			return index, true
-		}
-	}
-	return 0, false
-}
-
 func inspectSubcommand(args []string) {
 	subFlag := flag.NewFlagSet("inspect", flag.ExitOnError)
 	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers")
 	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
-	tsFmtNamePtr := subFlag.String("ts-fmt", tsFmtNames[TS_FMT_SECS], "Format of the timestamps. Possible values: "+strings.Join(tsFmtNames[:], ", "))
 
 	subFlag.Parse(args)
-
-	tsFmt, ok := tsFmtByName(*tsFmtNamePtr)
-	if !ok {
-		subUsage(subFlag)
-		fmt.Printf("ERROR: -ts-fmt: unknown timestamp format name `%s`\n", *tsFmtNamePtr)
-		os.Exit(1)
-	}
 
 	if *csvPtr == "" {
 		subUsage(subFlag)
@@ -413,7 +362,7 @@ func inspectSubcommand(args []string) {
 		os.Exit(1)
 	}
 
-	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr, tsFmt)
+	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
 	if err != nil {
 		fmt.Printf("ERROR: could not load chunks: %s\n", err)
 		os.Exit(1)
