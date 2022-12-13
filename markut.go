@@ -50,7 +50,6 @@ func secsToTs(secs int) string {
 type Chunk struct {
 	Start   Secs
 	End     Secs
-	Ignored []Secs
 	Name    string
 }
 
@@ -94,30 +93,20 @@ func loadChunksFromFile(path string, delay Secs) ([]Chunk, error) {
 
 		timestamp += delay
 
-		ignored := len(record) > 1 && record[1] == "ignore"
-
 		if chunkCurrent == nil {
-			if ignored {
-				return chunks, fmt.Errorf("Out of Chunk Ignored Marker %d", timestamp)
-			} else {
-				chunkCurrent = &Chunk{
-					Start: timestamp,
-				}
+			chunkCurrent = &Chunk{
+				Start: timestamp,
 			}
 		} else {
-			if ignored {
-				chunkCurrent.Ignored = append(chunkCurrent.Ignored, timestamp)
-			} else {
-				chunkCurrent.End = timestamp
-				chunkCurrent.Name = fmt.Sprintf("chunk-%02d.mp4", len(chunks))
-				chunks = append(chunks, *chunkCurrent)
-				chunkCurrent = nil
-			}
+			chunkCurrent.End = timestamp
+			chunkCurrent.Name = fmt.Sprintf("chunk-%02d.mp4", len(chunks))
+			chunks = append(chunks, *chunkCurrent)
+			chunkCurrent = nil
 		}
 	}
 
 	if chunkCurrent != nil {
-		return chunks, fmt.Errorf("Unclosed chunk detected! Please make sure that there is an even amount of not ignored markers")
+		return chunks, fmt.Errorf("Unclosed chunk detected! Please make sure that there is an even amount of markers.")
 	}
 
 	return chunks, nil
@@ -241,13 +230,6 @@ func highlightChunks(chunks []Chunk) []Highlight {
 	highlights := []Highlight{}
 
 	for _, chunk := range chunks {
-		for _, ignored := range chunk.Ignored {
-			highlights = append(highlights, Highlight{
-				timestamp: secsToTs(int(secs + chunk.Duration(ignored))),
-				message:   "ignored",
-			})
-		}
-
 		highlights = append(highlights, Highlight{
 			timestamp: secsToTs(int(secs + chunk.Duration(chunk.End))),
 			message:   "cut",
@@ -344,12 +326,6 @@ func chunkSubcommand(args []string) {
 	}
 
 	fmt.Printf("%s is rendered!\n", chunk.Name)
-	if len(chunk.Ignored) > 0 {
-		fmt.Printf("Ignored timestamps:\n")
-		for _, ignored := range chunk.Ignored {
-			fmt.Printf("  %s\n", secsToTs(int(chunk.Duration(ignored))))
-		}
-	}
 }
 
 func inspectSubcommand(args []string) {
@@ -375,11 +351,6 @@ func inspectSubcommand(args []string) {
 		fmt.Printf("  Name:  %s\n", chunk.Name)
 		fmt.Printf("  Start: %s (%s)\n", secsToTs(int(chunk.Start)), strconv.FormatFloat(chunk.Start, 'f', -1, 64))
 		fmt.Printf("  End:   %s (%s)\n", secsToTs(int(chunk.End)), strconv.FormatFloat(chunk.End, 'f', -1, 64))
-		fmt.Printf("  Ignored:\n")
-		for _, ignored := range chunk.Ignored {
-			fmt.Printf("    %s (%d)\n", secsToTs(int(ignored)), ignored)
-		}
-		fmt.Printf("\n")
 	}
 
 	fmt.Println("Cuts:")
