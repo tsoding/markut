@@ -274,14 +274,73 @@ func finalSubcommand(args []string) {
 		}
 	}
 
-	ourlistPath := "ourlist.txt"
-	ffmpegGenerateConcatList(chunks, ourlistPath)
-	ffmpegConcatChunks(ourlistPath, "output.mp4", *yPtr)
+	listPath := "final-list.txt"
+	ffmpegGenerateConcatList(chunks, listPath)
+	ffmpegConcatChunks(listPath, "output.mp4", *yPtr)
 
 	fmt.Println("Highlights:")
 	for _, highlight := range highlightChunks(chunks) {
 		fmt.Printf("%s - %s\n", highlight.timestamp, highlight.message)
 	}
+}
+
+func cutSubcommand(args []string) {
+	subFlag := flag.NewFlagSet("cut", flag.ExitOnError)
+	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers")
+	inputPtr := subFlag.String("input", "", "Path to the input video file")
+	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
+	cutPtr := subFlag.Int("cut", 0, "Cut number to render")
+	padPtr := subFlag.Float64("pad", 2, "Amount of seconds to pad around the cut")
+	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
+
+	subFlag.Parse(args)
+
+	if *csvPtr == "" {
+		subUsage(subFlag)
+		fmt.Printf("ERROR: No -csv file is provided\n")
+		os.Exit(1)
+	}
+
+	if *inputPtr == "" {
+		subUsage(subFlag)
+		fmt.Printf("ERROR: No -input file is provided\n")
+		os.Exit(1)
+	}
+
+	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
+	if err != nil {
+		fmt.Printf("ERROR: could not load chunks: %s\n", err)
+		os.Exit(1)
+	}
+
+	if *cutPtr + 1 >= len(chunks) {
+		fmt.Printf("ERROR: invalid cut number\n");
+		os.Exit(1);
+	}
+
+	cutChunks := []Chunk{
+		{
+			Start: chunks[*cutPtr].End - *padPtr,
+			End: chunks[*cutPtr].End,
+			Name: fmt.Sprintf("cut-%02d-left.mp4", *cutPtr),
+		},
+		{
+			Start: chunks[*cutPtr + 1].Start,
+			End: chunks[*cutPtr + 1].Start + *padPtr,
+			Name: fmt.Sprintf("cut-%02d-right.mp4", *cutPtr),
+		},
+	}
+
+	for _, chunk := range cutChunks {
+		err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
+		if err != nil {
+			fmt.Printf("WARNING: Failed to cut chunk: %s\n", err)
+		}
+	}
+
+	listPath := fmt.Sprintf("cut-%02d-list.txt", *cutPtr);
+	ffmpegGenerateConcatList(cutChunks, listPath)
+	ffmpegConcatChunks(listPath, fmt.Sprintf("cut-%02d.mp4", *cutPtr), *yPtr)
 }
 
 func chunkSubcommand(args []string) {
@@ -378,6 +437,7 @@ func fixupSubcommand(args []string) {
 }
 
 type Subcommand struct {
+	// TODO: Subcommand.Run should return error
 	Run func(args []string)
 	Description string
 }
@@ -390,6 +450,10 @@ var Subcommands = map[string]Subcommand{
 	"chunk": Subcommand{
 		Run: chunkSubcommand,
 		Description: "Render specific chunk of the final video",
+	},
+	"cut": Subcommand{
+		Run: cutSubcommand,
+		Description: "Render specific cut of the final video",
 	},
 	"inspect": Subcommand{
 		Run: inspectSubcommand,
