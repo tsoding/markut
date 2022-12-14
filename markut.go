@@ -53,12 +53,8 @@ type Chunk struct {
 	Name    string
 }
 
-func (chunk Chunk) Duration(end Secs) Secs {
-	if end < chunk.Start {
-		// TODO: this assertion should be a runtime error
-		panic("Assertion Failed: Incorrect end")
-	}
-	return end - chunk.Start
+func (chunk Chunk) Duration() Secs {
+	return chunk.End - chunk.Start
 }
 
 func loadChunksFromFile(path string, delay Secs) ([]Chunk, error) {
@@ -98,8 +94,12 @@ func loadChunksFromFile(path string, delay Secs) ([]Chunk, error) {
 				Start: timestamp,
 			}
 		} else {
-			chunkCurrent.End = timestamp
+			if chunkCurrent.Start > timestamp {
+				return chunks, fmt.Errorf("Chunk %02d ends earlier than starts", len(chunks))
+			}
+
 			chunkCurrent.Name = fmt.Sprintf("chunk-%02d.mp4", len(chunks))
+			chunkCurrent.End = timestamp
 			chunks = append(chunks, *chunkCurrent)
 			chunkCurrent = nil
 		}
@@ -146,7 +146,7 @@ func ffmpegCutChunk(inputPath string, chunk Chunk, y bool) error {
 	args = append(args, "-ss", strconv.FormatFloat(chunk.Start, 'f', -1, 64))
 	args = append(args, "-i", inputPath)
 	args = append(args, "-c", "copy")
-	args = append(args, "-t", strconv.FormatFloat(chunk.Duration(chunk.End), 'f', -1, 64))
+	args = append(args, "-t", strconv.FormatFloat(chunk.Duration(), 'f', -1, 64))
 	args = append(args, chunk.Name)
 
 	logCmd(ffmpeg, args...)
@@ -225,11 +225,11 @@ func highlightChunks(chunks []Chunk) []Highlight {
 
 	for _, chunk := range chunks {
 		highlights = append(highlights, Highlight{
-			timestamp: secsToTs(int(secs + chunk.Duration(chunk.End))),
+			timestamp: secsToTs(int(secs + chunk.Duration())),
 			message:   "cut",
 		})
 
-		secs += chunk.Duration(chunk.End)
+		secs += chunk.Duration()
 	}
 
 	return highlights
