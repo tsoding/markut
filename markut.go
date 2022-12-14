@@ -214,12 +214,6 @@ func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) error {
 	return nil
 }
 
-func subUsage(subFlag *flag.FlagSet) {
-	fmt.Printf("Usage: markut %s [OPTIONS]\n", subFlag.Name())
-	fmt.Printf("OPTIONS:\n")
-	subFlag.PrintDefaults()
-}
-
 type Highlight struct {
 	timestamp string
 	message   string
@@ -241,36 +235,40 @@ func highlightChunks(chunks []Chunk) []Highlight {
 	return highlights
 }
 
-func finalSubcommand(args []string) {
-	subFlag := flag.NewFlagSet("final", flag.ExitOnError)
-	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers")
-	inputPtr := subFlag.String("input", "", "Path to the input video file")
+func finalSubcommand(args []string) error {
+	subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
+	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers (mandatory)")
+	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
-	subFlag.Parse(args)
+	err := subFlag.Parse(args)
+	if err == flag.ErrHelp {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
 
 	if *csvPtr == "" {
-		subUsage(subFlag)
-		fmt.Printf("ERROR: No -csv file is provided\n")
-		os.Exit(1)
+		subFlag.Usage()
+		return fmt.Errorf("No -csv file is provided")
 	}
 
 	if *inputPtr == "" {
-		subUsage(subFlag)
-		fmt.Printf("ERROR: No -input file is provided\n")
-		os.Exit(1)
+		subFlag.Usage()
+		return fmt.Errorf("No -input file is provided")
 	}
 
 	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
 	if err != nil {
-		fmt.Printf("ERROR: Could not load chunks: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("Could not load chunks from file %s: %w", *csvPtr, err)
 	}
 	for _, chunk := range chunks {
 		err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
 		if err != nil {
-			fmt.Printf("WARNING: Failed to cut chunk: %s\n", err)
+			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
 		}
 	}
 
@@ -282,40 +280,45 @@ func finalSubcommand(args []string) {
 	for _, highlight := range highlightChunks(chunks) {
 		fmt.Printf("%s - %s\n", highlight.timestamp, highlight.message)
 	}
+
+	return nil
 }
 
-func cutSubcommand(args []string) {
-	subFlag := flag.NewFlagSet("cut", flag.ExitOnError)
-	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers")
-	inputPtr := subFlag.String("input", "", "Path to the input video file")
+func cutSubcommand(args []string) error {
+	subFlag := flag.NewFlagSet("cut", flag.ContinueOnError)
+	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers (mandatory)")
+	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 	cutPtr := subFlag.Int("cut", 0, "Cut number to render")
 	padPtr := subFlag.Float64("pad", 2, "Amount of seconds to pad around the cut")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
-	subFlag.Parse(args)
+	err := subFlag.Parse(args)
+	if err == flag.ErrHelp {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
 
 	if *csvPtr == "" {
-		subUsage(subFlag)
-		fmt.Printf("ERROR: No -csv file is provided\n")
-		os.Exit(1)
+		subFlag.Usage()
+		return fmt.Errorf("No -csv file is provided")
 	}
 
 	if *inputPtr == "" {
-		subUsage(subFlag)
-		fmt.Printf("ERROR: No -input file is provided\n")
-		os.Exit(1)
+		subFlag.Usage()
+		return fmt.Errorf("No -input file is provided")
 	}
 
 	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
 	if err != nil {
-		fmt.Printf("ERROR: could not load chunks: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("Could not load chunks from file %s: %w", *csvPtr, err)
 	}
 
 	if *cutPtr + 1 >= len(chunks) {
-		fmt.Printf("ERROR: invalid cut number\n");
-		os.Exit(1);
+		return fmt.Errorf("%d is an invalid cut number. There is only %d of them.", *cutPtr, len(chunks) - 1);
 	}
 
 	cutChunks := []Chunk{
@@ -334,76 +337,87 @@ func cutSubcommand(args []string) {
 	for _, chunk := range cutChunks {
 		err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
 		if err != nil {
-			fmt.Printf("WARNING: Failed to cut chunk: %s\n", err)
+			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
 		}
 	}
 
 	listPath := fmt.Sprintf("cut-%02d-list.txt", *cutPtr);
 	ffmpegGenerateConcatList(cutChunks, listPath)
 	ffmpegConcatChunks(listPath, fmt.Sprintf("cut-%02d.mp4", *cutPtr), *yPtr)
+
+	return nil
 }
 
-func chunkSubcommand(args []string) {
-	subFlag := flag.NewFlagSet("chunk", flag.ExitOnError)
-	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers")
-	inputPtr := subFlag.String("input", "", "Path to the input video file")
+func chunkSubcommand(args []string) error {
+	subFlag := flag.NewFlagSet("chunk", flag.ContinueOnError)
+	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers (mandatory)")
+	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 	chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
-	subFlag.Parse(args)
+	err := subFlag.Parse(args)
+
+	if err == flag.ErrHelp {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
 
 	if *csvPtr == "" {
-		subUsage(subFlag)
-		fmt.Printf("ERROR: No -csv file is provided\n")
-		os.Exit(1)
+		subFlag.Usage()
+		return fmt.Errorf("No -csv file is provided")
 	}
 
 	if *inputPtr == "" {
-		subUsage(subFlag)
-		fmt.Printf("ERROR: No -input file is provided\n")
-		os.Exit(1)
+		subFlag.Usage()
+		return fmt.Errorf("No -input file is provided")
 	}
 
 	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
 	if err != nil {
-		fmt.Printf("ERROR: could not load chunks: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("Could not load chunks from file %s: %w", *csvPtr, err)
 	}
 
 	if *chunkPtr > len(chunks) {
-		fmt.Printf("ERROR: %d is incorrect chunk number. There is only %d of them.\n", *chunkPtr, len(chunks))
-		os.Exit(1)
+		return fmt.Errorf("%d is an incorrect chunk number. There is only %d of them.", *chunkPtr, len(chunks))
 	}
 
 	chunk := chunks[*chunkPtr]
 
 	err = ffmpegCutChunk(*inputPtr, chunk, *yPtr)
 	if err != nil {
-		fmt.Printf("ERROR: could not cut the chunk: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("Could not cut the chunk %s: %s", chunk.Name, err)
 	}
 
 	fmt.Printf("%s is rendered!\n", chunk.Name)
+	return nil
 }
 
-func inspectSubcommand(args []string) {
-	subFlag := flag.NewFlagSet("inspect", flag.ExitOnError)
-	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers")
+func inspectSubcommand(args []string) error {
+	subFlag := flag.NewFlagSet("inspect", flag.ContinueOnError)
+	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers (mandatory)")
 	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 
-	subFlag.Parse(args)
+	err := subFlag.Parse(args)
+	if err == flag.ErrHelp {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
 
 	if *csvPtr == "" {
-		subUsage(subFlag)
-		fmt.Printf("ERROR: No -csv file is provided\n")
-		os.Exit(1)
+		subFlag.Usage()
+		return fmt.Errorf("No -csv file is provided")
 	}
 
 	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
 	if err != nil {
-		fmt.Printf("ERROR: could not load chunks: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("Could not load chunks from file %s: %w", *csvPtr, err)
 	}
 	fmt.Println("Chunks:")
 	for _, chunk := range chunks {
@@ -416,60 +430,74 @@ func inspectSubcommand(args []string) {
 	for _, highlight := range highlightChunks(chunks) {
 		fmt.Printf("  %s - %s\n", highlight.timestamp, highlight.message)
 	}
+	return nil
 }
 
-func fixupSubcommand(args []string) {
+func fixupSubcommand(args []string) error {
 	subFlag := flag.NewFlagSet("fixup", flag.ExitOnError)
-	inputPtr := subFlag.String("input", "", "Path to the input video file")
+	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
-	subFlag.Parse(args)
+	err := subFlag.Parse(args)
+	if err == flag.ErrHelp {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
 
 	if *inputPtr == "" {
-		subUsage(subFlag)
-		fmt.Printf("ERROR: No -input file is provided\n")
-		os.Exit(1)
+		subFlag.Usage()
+		return fmt.Errorf("No -input file is provided")
 	}
 
 	outputPath := "input.ts"
 	ffmpegFixupInput(*inputPtr, outputPath, *yPtr)
 	fmt.Printf("Generated %s\n", outputPath)
+
+	return nil
 }
 
 type Subcommand struct {
-	// TODO: Subcommand.Run should return error
-	Run func(args []string)
+	Name string
+	Run func(args []string) error
 	Description string
 }
 
-var Subcommands = map[string]Subcommand{
-	"final": Subcommand{
-		Run: finalSubcommand,
-		Description: "Render the final video",
+var Subcommands = []Subcommand{
+	{
+		Name: "fixup",
+		Run: fixupSubcommand,
+		Description: "Fixup the initial footage",
 	},
-	"chunk": Subcommand{
-		Run: chunkSubcommand,
-		Description: "Render specific chunk of the final video",
-	},
-	"cut": Subcommand{
+	{
+		Name: "cut",
 		Run: cutSubcommand,
 		Description: "Render specific cut of the final video",
 	},
-	"inspect": Subcommand{
+	{
+		Name: "chunk",
+		Run: chunkSubcommand,
+		Description: "Render specific chunk of the final video",
+	},
+	{
+		Name: "final",
+		Run: finalSubcommand,
+		Description: "Render the final video",
+	},
+	{
+		Name: "inspect",
 		Run: inspectSubcommand,
 		Description: "Inspect markers in the CSV file",
-	},
-	"fixup": Subcommand{
-		Run: fixupSubcommand,
-		Description: "Fixup the initial footage",
 	},
 }
 
 func usage() {
 	fmt.Printf("Usage: markut <SUBCOMMAND> [OPTIONS]\n")
 	fmt.Printf("SUBCOMMANDS:\n")
-	for name, subcommands := range Subcommands {
-		fmt.Printf("    %s      %s\n", name, subcommands.Description);
+	for _, subcommand := range Subcommands {
+		fmt.Printf("    %s - %s\n", subcommand.Name, subcommand.Description);
 	}
 	fmt.Printf("ENVARS:\n")
 	fmt.Printf("    FFMPEG_PREFIX      Prefix path for a custom ffmpeg distribution\n")
@@ -482,11 +510,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	if subcommand, ok := Subcommands[os.Args[1]]; ok {
-		subcommand.Run(os.Args[2:])
-	} else {
-		usage()
-		fmt.Printf("ERROR: Unknown subcommand %s\n", os.Args[1])
-		os.Exit(1)
+	for _, subcommand := range Subcommands {
+		if subcommand.Name == os.Args[1] {
+			err := subcommand.Run(os.Args[2:])
+			if err != nil {
+				fmt.Printf("ERROR: %s\n", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
+		}
 	}
+
+	usage()
+	fmt.Printf("ERROR: Unknown subcommand %s\n", os.Args[1])
+	os.Exit(1)
 }
