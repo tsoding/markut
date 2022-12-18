@@ -290,7 +290,7 @@ func cutSubcommand(args []string) error {
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 	cutPtr := subFlag.Int("cut", 0, "Cut number to render")
-	padPtr := subFlag.Float64("pad", 2, "Amount of seconds to pad around the cut")
+	padPtr := subFlag.String("pad", "00:00:02", "Amount of time to pad around the cut (supports the markut's timestamp format)")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
 	err := subFlag.Parse(args)
@@ -312,6 +312,12 @@ func cutSubcommand(args []string) error {
 		return fmt.Errorf("No -input file is provided")
 	}
 
+	pad, err := tsToSecs(*padPtr)
+	if err != nil {
+		subFlag.Usage()
+		return fmt.Errorf("%s is not a correct timestamp for -pad: %w", *padPtr, err)
+	}
+
 	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
 	if err != nil {
 		return fmt.Errorf("Could not load chunks from file %s: %w", *csvPtr, err)
@@ -323,13 +329,13 @@ func cutSubcommand(args []string) error {
 
 	cutChunks := []Chunk{
 		{
-			Start: chunks[*cutPtr].End - *padPtr,
+			Start: chunks[*cutPtr].End - pad,
 			End: chunks[*cutPtr].End,
 			Name: fmt.Sprintf("cut-%02d-left.mp4", *cutPtr),
 		},
 		{
 			Start: chunks[*cutPtr + 1].Start,
-			End: chunks[*cutPtr + 1].Start + *padPtr,
+			End: chunks[*cutPtr + 1].Start + pad,
 			Name: fmt.Sprintf("cut-%02d-right.mp4", *cutPtr),
 		},
 	}
