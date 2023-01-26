@@ -273,8 +273,16 @@ func finalSubcommand(args []string) error {
 	}
 
 	listPath := "final-list.txt"
-	ffmpegGenerateConcatList(chunks, listPath)
-	ffmpegConcatChunks(listPath, "output.mp4", *yPtr)
+	err = ffmpegGenerateConcatList(chunks, listPath)
+	if err != nil {
+		return fmt.Errorf("Could not generate final concat list %s: %w", listPath, err)
+	}
+
+	outputPath := "output.mp4";
+	err = ffmpegConcatChunks(listPath, outputPath, *yPtr)
+	if err != nil {
+		return fmt.Errorf("Could not generated final output %s: %w", outputPath, err)
+	}
 
 	fmt.Println("Highlights:")
 	for _, highlight := range highlightChunks(chunks) {
@@ -347,9 +355,18 @@ func cutSubcommand(args []string) error {
 		}
 	}
 
-	listPath := fmt.Sprintf("cut-%02d-list.txt", *cutPtr);
-	ffmpegGenerateConcatList(cutChunks, listPath)
-	ffmpegConcatChunks(listPath, fmt.Sprintf("cut-%02d.mp4", *cutPtr), *yPtr)
+	cutListPath := "cut-%02d-list.txt";
+	listPath := fmt.Sprintf(cutListPath, *cutPtr);
+	err = ffmpegGenerateConcatList(cutChunks, listPath)
+	if err != nil {
+		return fmt.Errorf("Could not generate not generate cut concat list %s: %w", cutListPath, err)
+	}
+
+	cutOutputPath := "cut-%02d.mp4"
+	err = ffmpegConcatChunks(listPath, fmt.Sprintf(cutOutputPath, *cutPtr), *yPtr)
+	if err != nil {
+		return fmt.Errorf("Could not generate cut output file %s: %w", cutOutputPath, err)
+	}
 
 	return nil
 }
@@ -459,7 +476,10 @@ func fixupSubcommand(args []string) error {
 	}
 
 	outputPath := "input.ts"
-	ffmpegFixupInput(*inputPtr, outputPath, *yPtr)
+	err = ffmpegFixupInput(*inputPtr, outputPath, *yPtr)
+	if err != nil {
+		return fmt.Errorf("Could not fixup input file %s: %w", *inputPtr, err)
+	}
 	fmt.Printf("Generated %s\n", outputPath)
 
 	return nil
