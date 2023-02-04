@@ -9,7 +9,7 @@ Given the [VOD](https://help.twitch.tv/s/article/video-on-demand) of the stream 
 Install [Go](https://golang.org/) and [ffmpeg](https://www.ffmpeg.org/).
 
 ```console
-$ go build markut.go
+$ go build
 $ ./markut final -csv marks.csv -input vod.mp4 -delay 4
 ```
 
