@@ -1,15 +1,13 @@
 package main
 
 import (
-	"encoding/csv"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
+	"path"
 	"strconv"
 	"strings"
-	"path"
 )
 
 type Secs = float64
@@ -22,17 +20,23 @@ func tsToSecs(ts string) (Secs, error) {
 	switch comps := strings.Split(ts, ":"); len(comps) {
 	case 3:
 		hh, err = strconv.Atoi(comps[index])
-		if err != nil { return 0, err }
+		if err != nil {
+			return 0, err
+		}
 		index += 1
 		fallthrough
 	case 2:
 		mm, err = strconv.Atoi(comps[index])
-		if err != nil { return 0, err }
+		if err != nil {
+			return 0, err
+		}
 		index += 1
 		fallthrough
 	case 1:
 		ss, err = strconv.ParseFloat(comps[index], 64)
-		if err != nil { return 0, err }
+		if err != nil {
+			return 0, err
+		}
 		return 60*60*Secs(hh) + 60*Secs(mm) + ss, nil
 	default:
 		return 0, fmt.Errorf("Unexpected amount of components in the timestamp (%d)", len(comps))
@@ -48,46 +52,46 @@ func secsToTs(secs int) string {
 }
 
 type Chunk struct {
-	Start   Secs
-	End     Secs
-	Name    string
+	Start Secs
+	End   Secs
+	Name  string
 }
 
 func (chunk Chunk) Duration() Secs {
 	return chunk.End - chunk.Start
 }
 
-func loadChunksFromFile(path string, delay Secs) ([]Chunk, error) {
-	var chunks []Chunk
-
-	f, err := os.Open(path)
+func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err error) {
+	var content []byte
+	content, err = os.ReadFile(path)
 	if err != nil {
-		return chunks, err
+		return
 	}
-	defer f.Close()
 
-	r := csv.NewReader(f)
+	lexer := NewLexer(string(content), path)
 
 	var chunkCurrent *Chunk = nil
+	var token Token
 
 	for {
-		record, err := r.Read()
-		if err == io.EOF {
+		token, err = lexer.Next()
+		if err != nil {
+			return
+		}
+
+		if token.Kind == TokenEOF {
 			break
 		}
-		if err != nil {
-			return chunks, err
-		}
-		if len(record) <= 0 {
-			return chunks, fmt.Errorf("CSV record must have at least one field")
+
+		if token.Kind != TokenTimestamp {
+			err = &DiagErr{
+				Loc: token.Loc,
+				Err: fmt.Errorf("Expected %s but got %s", TokenKindName[TokenTimestamp], TokenKindName[token.Kind]),
+			}
+			return
 		}
 
-		timestamp, err := tsToSecs(record[0])
-		if err != nil {
-			return chunks, err
-		}
-
-		timestamp += delay
+		timestamp := token.Timestamp + delay
 
 		if chunkCurrent == nil {
 			chunkCurrent = &Chunk{
@@ -95,7 +99,8 @@ func loadChunksFromFile(path string, delay Secs) ([]Chunk, error) {
 			}
 		} else {
 			if chunkCurrent.Start > timestamp {
-				return chunks, fmt.Errorf("Chunk %02d ends earlier than starts", len(chunks))
+				err = fmt.Errorf("Chunk %02d ends earlier than starts", len(chunks))
+				return
 			}
 
 			chunkCurrent.Name = fmt.Sprintf("chunk-%02d.mp4", len(chunks))
@@ -106,10 +111,11 @@ func loadChunksFromFile(path string, delay Secs) ([]Chunk, error) {
 	}
 
 	if chunkCurrent != nil {
-		return chunks, fmt.Errorf("Unclosed chunk detected! Please make sure that there is an even amount of markers.")
+		err = fmt.Errorf("Unclosed chunk detected! Please make sure that there is an even amount of markers.")
+		return
 	}
 
-	return chunks, nil
+	return
 }
 
 func ffmpegPathToBin() (ffmpegPath string) {
@@ -237,7 +243,7 @@ func highlightChunks(chunks []Chunk) []Highlight {
 
 func finalSubcommand(args []string) error {
 	subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
-	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers (mandatory)")
+	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
@@ -251,9 +257,9 @@ func finalSubcommand(args []string) error {
 		return err
 	}
 
-	if *csvPtr == "" {
+	if *markutPtr == "" {
 		subFlag.Usage()
-		return fmt.Errorf("No -csv file is provided")
+		return fmt.Errorf("No -markut file is provided")
 	}
 
 	if *inputPtr == "" {
@@ -261,9 +267,9 @@ func finalSubcommand(args []string) error {
 		return fmt.Errorf("No -input file is provided")
 	}
 
-	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
+	chunks, err := loadChunksFromMarkutFile(*markutPtr, *delayPtr)
 	if err != nil {
-		return fmt.Errorf("Could not load chunks from file %s: %w", *csvPtr, err)
+		return fmt.Errorf("Could not load chunks from file %s: %w", *markutPtr, err)
 	}
 	for _, chunk := range chunks {
 		err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
@@ -278,7 +284,7 @@ func finalSubcommand(args []string) error {
 		return fmt.Errorf("Could not generate final concat list %s: %w", listPath, err)
 	}
 
-	outputPath := "output.mp4";
+	outputPath := "output.mp4"
 	err = ffmpegConcatChunks(listPath, outputPath, *yPtr)
 	if err != nil {
 		return fmt.Errorf("Could not generated final output %s: %w", outputPath, err)
@@ -294,7 +300,7 @@ func finalSubcommand(args []string) error {
 
 func cutSubcommand(args []string) error {
 	subFlag := flag.NewFlagSet("cut", flag.ContinueOnError)
-	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers (mandatory)")
+	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 	cutPtr := subFlag.Int("cut", 0, "Cut number to render")
@@ -310,9 +316,9 @@ func cutSubcommand(args []string) error {
 		return err
 	}
 
-	if *csvPtr == "" {
+	if *markutPtr == "" {
 		subFlag.Usage()
-		return fmt.Errorf("No -csv file is provided")
+		return fmt.Errorf("No -markut file is provided")
 	}
 
 	if *inputPtr == "" {
@@ -326,25 +332,25 @@ func cutSubcommand(args []string) error {
 		return fmt.Errorf("%s is not a correct timestamp for -pad: %w", *padPtr, err)
 	}
 
-	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
+	chunks, err := loadChunksFromMarkutFile(*markutPtr, *delayPtr)
 	if err != nil {
-		return fmt.Errorf("Could not load chunks from file %s: %w", *csvPtr, err)
+		return fmt.Errorf("Could not load chunks from file %s: %w", *markutPtr, err)
 	}
 
-	if *cutPtr + 1 >= len(chunks) {
-		return fmt.Errorf("%d is an invalid cut number. There is only %d of them.", *cutPtr, len(chunks) - 1);
+	if *cutPtr+1 >= len(chunks) {
+		return fmt.Errorf("%d is an invalid cut number. There is only %d of them.", *cutPtr, len(chunks)-1)
 	}
 
 	cutChunks := []Chunk{
 		{
 			Start: chunks[*cutPtr].End - pad,
-			End: chunks[*cutPtr].End,
-			Name: fmt.Sprintf("cut-%02d-left.mp4", *cutPtr),
+			End:   chunks[*cutPtr].End,
+			Name:  fmt.Sprintf("cut-%02d-left.mp4", *cutPtr),
 		},
 		{
-			Start: chunks[*cutPtr + 1].Start,
-			End: chunks[*cutPtr + 1].Start + pad,
-			Name: fmt.Sprintf("cut-%02d-right.mp4", *cutPtr),
+			Start: chunks[*cutPtr+1].Start,
+			End:   chunks[*cutPtr+1].Start + pad,
+			Name:  fmt.Sprintf("cut-%02d-right.mp4", *cutPtr),
 		},
 	}
 
@@ -355,8 +361,8 @@ func cutSubcommand(args []string) error {
 		}
 	}
 
-	cutListPath := "cut-%02d-list.txt";
-	listPath := fmt.Sprintf(cutListPath, *cutPtr);
+	cutListPath := "cut-%02d-list.txt"
+	listPath := fmt.Sprintf(cutListPath, *cutPtr)
 	err = ffmpegGenerateConcatList(cutChunks, listPath)
 	if err != nil {
 		return fmt.Errorf("Could not generate not generate cut concat list %s: %w", cutListPath, err)
@@ -373,7 +379,7 @@ func cutSubcommand(args []string) error {
 
 func chunkSubcommand(args []string) error {
 	subFlag := flag.NewFlagSet("chunk", flag.ContinueOnError)
-	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers (mandatory)")
+	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 	chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
@@ -389,9 +395,9 @@ func chunkSubcommand(args []string) error {
 		return err
 	}
 
-	if *csvPtr == "" {
+	if *markutPtr == "" {
 		subFlag.Usage()
-		return fmt.Errorf("No -csv file is provided")
+		return fmt.Errorf("No -markut file is provided")
 	}
 
 	if *inputPtr == "" {
@@ -399,9 +405,9 @@ func chunkSubcommand(args []string) error {
 		return fmt.Errorf("No -input file is provided")
 	}
 
-	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
+	chunks, err := loadChunksFromMarkutFile(*markutPtr, *delayPtr)
 	if err != nil {
-		return fmt.Errorf("Could not load chunks from file %s: %w", *csvPtr, err)
+		return fmt.Errorf("Could not load chunks from file %s: %w", *markutPtr, err)
 	}
 
 	if *chunkPtr > len(chunks) {
@@ -421,7 +427,7 @@ func chunkSubcommand(args []string) error {
 
 func inspectSubcommand(args []string) error {
 	subFlag := flag.NewFlagSet("inspect", flag.ContinueOnError)
-	csvPtr := subFlag.String("csv", "", "Path to the CSV file with markers (mandatory)")
+	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 
 	err := subFlag.Parse(args)
@@ -433,14 +439,14 @@ func inspectSubcommand(args []string) error {
 		return err
 	}
 
-	if *csvPtr == "" {
+	if *markutPtr == "" {
 		subFlag.Usage()
-		return fmt.Errorf("No -csv file is provided")
+		return fmt.Errorf("No -markut file is provided")
 	}
 
-	chunks, err := loadChunksFromFile(*csvPtr, *delayPtr)
+	chunks, err := loadChunksFromMarkutFile(*markutPtr, *delayPtr)
 	if err != nil {
-		return fmt.Errorf("Could not load chunks from file %s: %w", *csvPtr, err)
+		return fmt.Errorf("Could not load chunks from file %s: %w", *markutPtr, err)
 	}
 	fmt.Println("Chunks:")
 	for _, chunk := range chunks {
@@ -486,36 +492,36 @@ func fixupSubcommand(args []string) error {
 }
 
 type Subcommand struct {
-	Name string
-	Run func(args []string) error
+	Name        string
+	Run         func(args []string) error
 	Description string
 }
 
 var Subcommands = []Subcommand{
 	{
-		Name: "fixup",
-		Run: fixupSubcommand,
+		Name:        "fixup",
+		Run:         fixupSubcommand,
 		Description: "Fixup the initial footage",
 	},
 	{
-		Name: "cut",
-		Run: cutSubcommand,
+		Name:        "cut",
+		Run:         cutSubcommand,
 		Description: "Render specific cut of the final video",
 	},
 	{
-		Name: "chunk",
-		Run: chunkSubcommand,
+		Name:        "chunk",
+		Run:         chunkSubcommand,
 		Description: "Render specific chunk of the final video",
 	},
 	{
-		Name: "final",
-		Run: finalSubcommand,
+		Name:        "final",
+		Run:         finalSubcommand,
 		Description: "Render the final video",
 	},
 	{
-		Name: "inspect",
-		Run: inspectSubcommand,
-		Description: "Inspect markers in the CSV file",
+		Name:        "inspect",
+		Run:         inspectSubcommand,
+		Description: "Inspect markers in the Markut file",
 	},
 }
 
@@ -523,7 +529,7 @@ func usage() {
 	fmt.Printf("Usage: markut <SUBCOMMAND> [OPTIONS]\n")
 	fmt.Printf("SUBCOMMANDS:\n")
 	for _, subcommand := range Subcommands {
-		fmt.Printf("    %s - %s\n", subcommand.Name, subcommand.Description);
+		fmt.Printf("    %s - %s\n", subcommand.Name, subcommand.Description)
 	}
 	fmt.Printf("ENVARS:\n")
 	fmt.Printf("    FFMPEG_PREFIX      Prefix path for a custom ffmpeg distribution\n")
