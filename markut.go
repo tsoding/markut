@@ -61,7 +61,7 @@ func (chunk Chunk) Duration() Secs {
 	return chunk.End - chunk.Start
 }
 
-func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err error) {
+func loadTimestampsFromMarkutFile(path string) (timestamps []Secs, err error) {
 	var content []byte
 	content, err = os.ReadFile(path)
 	if err != nil {
@@ -69,10 +69,7 @@ func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err erro
 	}
 
 	lexer := NewLexer(string(content), path)
-
-	var chunkCurrent *Chunk = nil
 	var token Token
-
 	for {
 		token, err = lexer.Next()
 		if err != nil {
@@ -83,16 +80,49 @@ func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err erro
 			break
 		}
 
-		if token.Kind != TokenTimestamp {
+		switch token.Kind {
+		case TokenDash:
+			n := len(timestamps)
+			if n < 2 {
+				err = &DiagErr{
+					Loc: token.Loc,
+					Err: fmt.Errorf("Not enough timestamps to subtract. Expected 2 but got %d", n),
+				}
+			}
+			timestamps[n-2] -= timestamps[n-1]
+			timestamps = timestamps[:n-1]
+		case TokenPlus:
+			n := len(timestamps)
+			if n < 2 {
+				err = &DiagErr{
+					Loc: token.Loc,
+					Err: fmt.Errorf("Not enough timestamps to sum up. Expected 2 but got %d", n),
+				}
+			}
+			timestamps[n-2] += timestamps[n-1]
+			timestamps = timestamps[:n-1]
+		case TokenTimestamp:
+			timestamps = append(timestamps, token.Timestamp)
+		default:
 			err = &DiagErr{
 				Loc: token.Loc,
-				Err: fmt.Errorf("Expected %s but got %s", TokenKindName[TokenTimestamp], TokenKindName[token.Kind]),
+				Err: fmt.Errorf("Unexpected token %s", TokenKindName[token.Kind]),
 			}
 			return
 		}
+	}
+	return
+}
 
-		timestamp := token.Timestamp + delay
+func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err error) {
+	var timestamps []Secs
+	timestamps, err = loadTimestampsFromMarkutFile(path)
+	if err != nil {
+		return
+	}
 
+	var chunkCurrent *Chunk = nil
+	for _, timestamp := range timestamps {
 		if chunkCurrent == nil {
 			chunkCurrent = &Chunk{
 				Start: timestamp,

@@ -56,6 +56,8 @@ const (
 	TokenEllipsis
 	TokenAsterisk
 	TokenTimestamp
+	TokenDash
+	TokenPlus
 )
 
 var TokenKindName = map[TokenKind]string{
@@ -71,6 +73,8 @@ var TokenKindName = map[TokenKind]string{
 	TokenEllipsis:     "ellipsis",
 	TokenAsterisk:     "asterisk",
 	TokenTimestamp:    "timestamp",
+	TokenDash:         "dash",
+	TokenPlus:         "plus",
 }
 
 type LiteralToken struct {
@@ -87,6 +91,8 @@ var LiteralTokens = []LiteralToken{
 	{Text: ")", Kind: TokenParenClose},
 	{Text: "...", Kind: TokenEllipsis},
 	{Text: "*", Kind: TokenAsterisk},
+	{Text: "-", Kind: TokenDash},
+	{Text: "+", Kind: TokenPlus},
 }
 
 type Token struct {
