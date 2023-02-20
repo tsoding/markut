@@ -88,6 +88,7 @@ func loadTimestampsFromMarkutFile(path string) (timestamps []Secs, err error) {
 					Loc: token.Loc,
 					Err: fmt.Errorf("Not enough timestamps to subtract. Expected 2 but got %d", n),
 				}
+				return
 			}
 			timestamps[n-2] -= timestamps[n-1]
 			timestamps = timestamps[:n-1]
@@ -98,6 +99,7 @@ func loadTimestampsFromMarkutFile(path string) (timestamps []Secs, err error) {
 					Loc: token.Loc,
 					Err: fmt.Errorf("Not enough timestamps to sum up. Expected 2 but got %d", n),
 				}
+				return
 			}
 			timestamps[n-2] += timestamps[n-1]
 			timestamps = timestamps[:n-1]
