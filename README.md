@@ -13,13 +13,17 @@ $ go build
 $ ./markut final -markut marks.markut -input vod.mp4 -delay 4
 ```
 
+<!-- TODO: document available stacks of Markut language -->
+<!-- TODO: document available types and values of Markut language -->
+<!-- TODO: document available commands of Markut language -->
+
 ## Example of a Markut file
 
 ```c
 // You can use C-style comments
 /* Inline comments work too if you're into that */
 
-// Markut file consists of a sequence of timestamps.
+// Markut is a stack based language
 
 23           // A single number is seconds.
              // This is 23 seconds.
@@ -27,7 +31,8 @@ $ ./markut final -markut marks.markut -input vod.mp4 -delay 4
 23.69        // Seconds may have fractional part.
              // This is 23 seconds and 690 milliseconds.
 
-chunk        // form a chunk out of two previous timestamps
+chunk        // Pop two timestamps out of the operand stack
+             // and form a video chunk out of them.
 
 45  50 chunk // Timestamps don't have to be on the same line.
              // Useful when you want to visually denote a range.
@@ -42,5 +47,6 @@ chunk
 
 69:04:20
 "This is a string literal"
-timestamp    // record a YouTube timestamp at 69:04:20 with the label "This is a string literal"
+timestamp    // Push a YouTube timestamp at 69:04:20 with the label "This is a string literal"
+             // onto the timestamp stack
 ```
