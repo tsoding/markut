@@ -35,6 +35,34 @@ type Timestamp struct {
 	Time Secs
 }
 
+func checkArgs(loc Loc, stack []Token, signature ...TokenKind) (args []Token, err error, nextStack []Token) {
+	if len(stack) < len(signature) {
+		err = &DiagErr{
+			Loc: loc,
+			Err: fmt.Errorf("Expected %d arguments but got %d", len(signature), len(stack)),
+		}
+		return
+	}
+
+	for _, kind := range signature {
+		n := len(stack)
+		arg := stack[n-1]
+		stack = stack[:n-1]
+		if kind != arg.Kind {
+			err = &DiagErr{
+				Loc: arg.Loc,
+				Err: fmt.Errorf("Expected %s but got %s", TokenKindName[kind], TokenKindName[arg.Kind]),
+			}
+			return
+		}
+		args = append(args, arg)
+	}
+
+	nextStack = stack
+
+	return
+}
+
 func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err error) {
 	var content []byte
 	content, err = os.ReadFile(path)
@@ -56,57 +84,31 @@ func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err erro
 			break
 		}
 
+		var args []Token
 		switch token.Kind {
 		case TokenDash:
-			n := len(stack)
-			if n < 2 {
-				err = &DiagErr{
-					Loc: token.Loc,
-					Err: fmt.Errorf("Not enough timestamps to subtract. Expected 2 but got %d", n),
-				}
+			args, err, stack = checkArgs(token.Loc, stack, TokenTimestamp, TokenTimestamp)
+			if err != nil {
+				// TODO: can we use wrapped errors in here?
+				fmt.Printf("%s: ERROR: type check failed for subtraction\n", token.Loc)
 				return
 			}
-			if stack[n-1].Kind != TokenTimestamp {
-				err = &DiagErr{
-					Loc: stack[n-1].Loc,
-					Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-1].Kind]),
-				}
-				return
-			}
-			if stack[n-2].Kind != TokenTimestamp {
-				err = &DiagErr{
-					Loc: stack[n-2].Loc,
-					Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-2].Kind]),
-				}
-				return
-			}
-			stack[n-2].Timestamp -= stack[n-1].Timestamp
-			stack = stack[:n-1]
+			stack = append(stack, Token{
+				Loc: token.Loc,
+				Kind: TokenTimestamp,
+				Timestamp: args[1].Timestamp - args[0].Timestamp,
+			})
 		case TokenPlus:
-			n := len(stack)
-			if n < 2 {
-				err = &DiagErr{
-					Loc: token.Loc,
-					Err: fmt.Errorf("Not enough timestamps to sum up. Expected 2 but got %d", n),
-				}
+			args, err, stack = checkArgs(token.Loc, stack, TokenTimestamp, TokenTimestamp)
+			if err != nil {
+				fmt.Printf("%s: ERROR: type check failed for addition\n", token.Loc)
 				return
 			}
-			if stack[n-1].Kind != TokenTimestamp {
-				err = &DiagErr{
-					Loc: stack[n-1].Loc,
-					Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-1].Kind]),
-				}
-				return
-			}
-			if stack[n-2].Kind != TokenTimestamp {
-				err = &DiagErr{
-					Loc: stack[n-2].Loc,
-					Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-2].Kind]),
-				}
-				return
-			}
-			stack[n-2].Timestamp += stack[n-1].Timestamp
-			stack = stack[:n-1]
+			stack = append(stack, Token{
+				Loc: token.Loc,
+				Kind: TokenTimestamp,
+				Timestamp: args[1].Timestamp + args[0].Timestamp,
+			})
 		case TokenString:
 			fallthrough
 		case TokenTimestamp:
@@ -115,66 +117,31 @@ func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err erro
 			command := string(token.Text)
 			switch command {
 			case "timestamp":
-				// TODO: implement proper timestamp handling
-				n := len(stack)
-				if n < 2 {
-					err = &DiagErr{
-						Loc: token.Loc,
-						Err: fmt.Errorf("Not enough arguments for command %s. Expected 2 but got %d", command, n),
-					}
+				args, err, stack = checkArgs(token.Loc, stack, TokenString, TokenTimestamp)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					return
 				}
-				if stack[n-1].Kind != TokenString {
-					err = &DiagErr{
-						Loc: stack[n-1].Loc,
-						Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenString], TokenKindName[stack[n-1].Kind]),
-					}
-					return
-				}
-				if stack[n-2].Kind != TokenTimestamp {
-					err = &DiagErr{
-						Loc: stack[n-2].Loc,
-						Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-2].Kind]),
-					}
-					return
-				}
-
 				timestamps = append(timestamps, Timestamp{
-					Label: string(stack[n-1].Text),
-					Time: stack[n-2].Timestamp,
+					Label: string(args[0].Text),
+					Time: args[1].Timestamp,
 				})
-
-				stack = stack[:n-2];
 			case "chunk":
-				n := len(stack)
-				if n < 2 {
-					err = &DiagErr{
-						Loc: token.Loc,
-						Err: fmt.Errorf("Not enough arguments for command %s. Expected 2 but got %d", command, n),
-					}
-					return
-				}
-				if stack[n-1].Kind != TokenTimestamp {
-					err = &DiagErr{
-						Loc: stack[n-1].Loc,
-						Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-1].Kind]),
-					}
-					return
-				}
-				if stack[n-2].Kind != TokenTimestamp {
-					err = &DiagErr{
-						Loc: stack[n-2].Loc,
-						Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-2].Kind]),
-					}
+				args, err, stack = checkArgs(token.Loc, stack, TokenTimestamp, TokenTimestamp)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					return
 				}
 
 				chunks = append(chunks, Chunk{
-					Start: stack[n-2].Timestamp,
-					End: stack[n-1].Timestamp,
+					Start: args[1].Timestamp,
+					End: args[0].Timestamp,
+					// TODO: if the name of the chunk is its number, we do we need to store it
+					// We can just compute it when we need it. Can we?
 					Name: fmt.Sprintf("chunk-%02d.mp4", len(chunks)),
 					Timestamps: timestamps,
 				})
+
 				timestamps = []Timestamp{}
 			default:
 				err = &DiagErr{
@@ -345,7 +312,7 @@ func finalSubcommand(args []string) error {
 
 	chunks, err := loadChunksFromMarkutFile(*markutPtr, *delayPtr)
 	if err != nil {
-		return fmt.Errorf("Could not load chunks from file %s: %w", *markutPtr, err)
+		return err
 	}
 	for _, chunk := range chunks {
 		err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
@@ -410,7 +377,7 @@ func cutSubcommand(args []string) error {
 
 	chunks, err := loadChunksFromMarkutFile(*markutPtr, *delayPtr)
 	if err != nil {
-		return fmt.Errorf("Could not load chunks from file %s: %w", *markutPtr, err)
+		return err
 	}
 
 	if *cutPtr+1 >= len(chunks) {
@@ -474,7 +441,7 @@ func timestampsSubcommand(args []string) error {
 
 	chunks, err := loadChunksFromMarkutFile(*markutPtr, 0)
 	if err != nil {
-		return fmt.Errorf("Could not load chunks from file %s: %w", *markutPtr, err)
+		return err
 	}
 
 	var offset Secs = 0;
@@ -518,7 +485,7 @@ func chunkSubcommand(args []string) error {
 
 	chunks, err := loadChunksFromMarkutFile(*markutPtr, *delayPtr)
 	if err != nil {
-		return fmt.Errorf("Could not load chunks from file %s: %w", *markutPtr, err)
+		return err
 	}
 
 	if *chunkPtr > len(chunks) {
@@ -557,7 +524,7 @@ func inspectSubcommand(args []string) error {
 
 	chunks, err := loadChunksFromMarkutFile(*markutPtr, *delayPtr)
 	if err != nil {
-		return fmt.Errorf("Could not load chunks from file %s: %w", *markutPtr, err)
+		return err
 	}
 	fmt.Println("Chunks:")
 	for _, chunk := range chunks {
@@ -663,7 +630,7 @@ func main() {
 		if subcommand.Name == os.Args[1] {
 			err := subcommand.Run(os.Args[2:])
 			if err != nil {
-				fmt.Printf("ERROR: %s\n", err)
+				fmt.Printf("%s\n", err)
 				os.Exit(1)
 			}
 			os.Exit(0)
