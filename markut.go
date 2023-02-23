@@ -8,6 +8,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"math"
 )
 
 type Secs = float64
@@ -55,13 +56,19 @@ type Chunk struct {
 	Start Secs
 	End   Secs
 	Name  string
+	Timestamps []Timestamp
 }
 
 func (chunk Chunk) Duration() Secs {
 	return chunk.End - chunk.Start
 }
 
-func loadTimestampsFromMarkutFile(path string) (timestamps []Secs, err error) {
+type Timestamp struct {
+	Label string
+	Time Secs
+}
+
+func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err error) {
 	var content []byte
 	content, err = os.ReadFile(path)
 	if err != nil {
@@ -70,6 +77,8 @@ func loadTimestampsFromMarkutFile(path string) (timestamps []Secs, err error) {
 
 	lexer := NewLexer(string(content), path)
 	var token Token
+	var stack []Token
+	var timestamps []Timestamp
 	for {
 		token, err = lexer.Next()
 		if err != nil {
@@ -82,7 +91,7 @@ func loadTimestampsFromMarkutFile(path string) (timestamps []Secs, err error) {
 
 		switch token.Kind {
 		case TokenDash:
-			n := len(timestamps)
+			n := len(stack)
 			if n < 2 {
 				err = &DiagErr{
 					Loc: token.Loc,
@@ -90,10 +99,24 @@ func loadTimestampsFromMarkutFile(path string) (timestamps []Secs, err error) {
 				}
 				return
 			}
-			timestamps[n-2] -= timestamps[n-1]
-			timestamps = timestamps[:n-1]
+			if stack[n-1].Kind != TokenTimestamp {
+				err = &DiagErr{
+					Loc: stack[n-1].Loc,
+					Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-1].Kind]),
+				}
+				return
+			}
+			if stack[n-2].Kind != TokenTimestamp {
+				err = &DiagErr{
+					Loc: stack[n-2].Loc,
+					Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-2].Kind]),
+				}
+				return
+			}
+			stack[n-2].Timestamp -= stack[n-1].Timestamp
+			stack = stack[:n-1]
 		case TokenPlus:
-			n := len(timestamps)
+			n := len(stack)
 			if n < 2 {
 				err = &DiagErr{
 					Loc: token.Loc,
@@ -101,10 +124,98 @@ func loadTimestampsFromMarkutFile(path string) (timestamps []Secs, err error) {
 				}
 				return
 			}
-			timestamps[n-2] += timestamps[n-1]
-			timestamps = timestamps[:n-1]
+			if stack[n-1].Kind != TokenTimestamp {
+				err = &DiagErr{
+					Loc: stack[n-1].Loc,
+					Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-1].Kind]),
+				}
+				return
+			}
+			if stack[n-2].Kind != TokenTimestamp {
+				err = &DiagErr{
+					Loc: stack[n-2].Loc,
+					Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-2].Kind]),
+				}
+				return
+			}
+			stack[n-2].Timestamp += stack[n-1].Timestamp
+			stack = stack[:n-1]
+		case TokenString:
+			fallthrough
 		case TokenTimestamp:
-			timestamps = append(timestamps, token.Timestamp)
+			stack = append(stack, token)
+		case TokenSymbol:
+			command := string(token.Text)
+			switch command {
+			case "timestamp":
+				// TODO: implement proper timestamp handling
+				n := len(stack)
+				if n < 2 {
+					err = &DiagErr{
+						Loc: token.Loc,
+						Err: fmt.Errorf("Not enough arguments for command %s. Expected 2 but got %d", command, n),
+					}
+					return
+				}
+				if stack[n-1].Kind != TokenString {
+					err = &DiagErr{
+						Loc: stack[n-1].Loc,
+						Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenString], TokenKindName[stack[n-1].Kind]),
+					}
+					return
+				}
+				if stack[n-2].Kind != TokenTimestamp {
+					err = &DiagErr{
+						Loc: stack[n-2].Loc,
+						Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-2].Kind]),
+					}
+					return
+				}
+
+				timestamps = append(timestamps, Timestamp{
+					Label: string(stack[n-1].Text),
+					Time: stack[n-2].Timestamp,
+				})
+
+				stack = stack[:n-2];
+			case "chunk":
+				n := len(stack)
+				if n < 2 {
+					err = &DiagErr{
+						Loc: token.Loc,
+						Err: fmt.Errorf("Not enough arguments for command %s. Expected 2 but got %d", command, n),
+					}
+					return
+				}
+				if stack[n-1].Kind != TokenTimestamp {
+					err = &DiagErr{
+						Loc: stack[n-1].Loc,
+						Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-1].Kind]),
+					}
+					return
+				}
+				if stack[n-2].Kind != TokenTimestamp {
+					err = &DiagErr{
+						Loc: stack[n-2].Loc,
+						Err: fmt.Errorf("Expected %s but got %s\n", TokenKindName[TokenTimestamp], TokenKindName[stack[n-2].Kind]),
+					}
+					return
+				}
+
+				chunks = append(chunks, Chunk{
+					Start: stack[n-2].Timestamp,
+					End: stack[n-1].Timestamp,
+					Name: fmt.Sprintf("chunk-%02d.mp4", len(chunks)),
+					Timestamps: timestamps,
+				})
+				timestamps = []Timestamp{}
+			default:
+				err = &DiagErr{
+					Loc: token.Loc,
+					Err: fmt.Errorf("Unknown command %s", command),
+				}
+				return
+			}
 		default:
 			err = &DiagErr{
 				Loc: token.Loc,
@@ -113,40 +224,6 @@ func loadTimestampsFromMarkutFile(path string) (timestamps []Secs, err error) {
 			return
 		}
 	}
-	return
-}
-
-func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err error) {
-	var timestamps []Secs
-	timestamps, err = loadTimestampsFromMarkutFile(path)
-	if err != nil {
-		return
-	}
-
-	var chunkCurrent *Chunk = nil
-	for _, timestamp := range timestamps {
-		if chunkCurrent == nil {
-			chunkCurrent = &Chunk{
-				Start: timestamp,
-			}
-		} else {
-			if chunkCurrent.Start > timestamp {
-				err = fmt.Errorf("Chunk %02d ends earlier than starts", len(chunks))
-				return
-			}
-
-			chunkCurrent.Name = fmt.Sprintf("chunk-%02d.mp4", len(chunks))
-			chunkCurrent.End = timestamp
-			chunks = append(chunks, *chunkCurrent)
-			chunkCurrent = nil
-		}
-	}
-
-	if chunkCurrent != nil {
-		err = fmt.Errorf("Unclosed chunk detected! Please make sure that there is an even amount of markers.")
-		return
-	}
-
 	return
 }
 
@@ -409,6 +486,41 @@ func cutSubcommand(args []string) error {
 	return nil
 }
 
+func timestampsSubcommand(args []string) error {
+	tsFlag := flag.NewFlagSet("timestamps", flag.ContinueOnError)
+	markutPtr := tsFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+
+	err := tsFlag.Parse(args)
+
+	if err == flag.ErrHelp {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if *markutPtr == "" {
+		tsFlag.Usage()
+		return fmt.Errorf("No -markut file is provided")
+	}
+
+	chunks, err := loadChunksFromMarkutFile(*markutPtr, 0)
+	if err != nil {
+		return fmt.Errorf("Could not load chunks from file %s: %w", *markutPtr, err)
+	}
+
+	var offset Secs = 0;
+	for _, chunk := range chunks {
+		for _, timestamp := range chunk.Timestamps {
+			fmt.Printf("%s - %s\n", secsToTs(int(math.Floor(timestamp.Time - chunk.Start + offset))), timestamp.Label);
+		}
+		offset += chunk.End - chunk.Start;
+	}
+
+	return nil
+}
+
 func chunkSubcommand(args []string) error {
 	subFlag := flag.NewFlagSet("chunk", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
@@ -550,6 +662,12 @@ var Subcommands = []Subcommand{
 		Run:         finalSubcommand,
 		Description: "Render the final video",
 	},
+	{
+		Name: "timestamps",
+		Run: timestampsSubcommand,
+		Description: "Generate YouTube timestamps",
+	},
+	// TODO: we probably want to remove inspect subcommand
 	{
 		Name:        "inspect",
 		Run:         inspectSubcommand,
