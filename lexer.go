@@ -3,7 +3,42 @@ package main
 import (
 	"fmt"
 	"unicode"
+	"strings"
+	"strconv"
 )
+
+type Secs = float64
+
+func tsToSecs(ts string) (Secs, error) {
+	var err error = nil
+	var mm, hh int = 0, 0
+	var ss Secs = 0
+	var index = 0
+	switch comps := strings.Split(ts, ":"); len(comps) {
+	case 3:
+		hh, err = strconv.Atoi(comps[index])
+		if err != nil {
+			return 0, err
+		}
+		index += 1
+		fallthrough
+	case 2:
+		mm, err = strconv.Atoi(comps[index])
+		if err != nil {
+			return 0, err
+		}
+		index += 1
+		fallthrough
+	case 1:
+		ss, err = strconv.ParseFloat(comps[index], 64)
+		if err != nil {
+			return 0, err
+		}
+		return 60*60*Secs(hh) + 60*Secs(mm) + ss, nil
+	default:
+		return 0, fmt.Errorf("Unexpected amount of components in the timestamp (%d)", len(comps))
+	}
+}
 
 type Loc struct {
 	FilePath string
