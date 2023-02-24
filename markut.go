@@ -35,19 +35,19 @@ type Chapter struct {
 	Label string
 }
 
-func checkArgs(loc Loc, stack []Token, signature ...TokenKind) (args []Token, err error, nextStack []Token) {
-	if len(stack) < len(signature) {
+func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []Token, err error, nextStack []Token) {
+	if len(argsStack) < len(signature) {
 		err = &DiagErr{
 			Loc: loc,
-			Err: fmt.Errorf("Expected %d arguments but got %d", len(signature), len(stack)),
+			Err: fmt.Errorf("Expected %d arguments but got %d", len(signature), len(argsStack)),
 		}
 		return
 	}
 
 	for _, kind := range signature {
-		n := len(stack)
-		arg := stack[n-1]
-		stack = stack[:n-1]
+		n := len(argsStack)
+		arg := argsStack[n-1]
+		argsStack = argsStack[:n-1]
 		if kind != arg.Kind {
 			err = &DiagErr{
 				Loc: arg.Loc,
@@ -58,7 +58,7 @@ func checkArgs(loc Loc, stack []Token, signature ...TokenKind) (args []Token, er
 		args = append(args, arg)
 	}
 
-	nextStack = stack
+	nextStack = argsStack
 
 	return
 }
@@ -72,8 +72,8 @@ func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err erro
 
 	lexer := NewLexer(string(content), path)
 	var token Token
-	var stack []Token
-	var chapters []Chapter
+	var argsStack []Token
+	var chapStack []Chapter
 	for {
 		token, err = lexer.Next()
 		if err != nil {
@@ -87,24 +87,24 @@ func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err erro
 		var args []Token
 		switch token.Kind {
 		case TokenDash:
-			args, err, stack = checkArgs(token.Loc, stack, TokenTimestamp, TokenTimestamp)
+			args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp, TokenTimestamp)
 			if err != nil {
 				// TODO: can we use wrapped errors in here?
 				fmt.Printf("%s: ERROR: type check failed for subtraction\n", token.Loc)
 				return
 			}
-			stack = append(stack, Token{
+			argsStack = append(argsStack, Token{
 				Loc: token.Loc,
 				Kind: TokenTimestamp,
 				Timestamp: args[1].Timestamp - args[0].Timestamp,
 			})
 		case TokenPlus:
-			args, err, stack = checkArgs(token.Loc, stack, TokenTimestamp, TokenTimestamp)
+			args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp, TokenTimestamp)
 			if err != nil {
 				fmt.Printf("%s: ERROR: type check failed for addition\n", token.Loc)
 				return
 			}
-			stack = append(stack, Token{
+			argsStack = append(argsStack, Token{
 				Loc: token.Loc,
 				Kind: TokenTimestamp,
 				Timestamp: args[1].Timestamp + args[0].Timestamp,
@@ -112,24 +112,24 @@ func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err erro
 		case TokenString:
 			fallthrough
 		case TokenTimestamp:
-			stack = append(stack, token)
+			argsStack = append(argsStack, token)
 		case TokenSymbol:
 			command := string(token.Text)
 			switch command {
 			case "chapter":
 				fallthrough
 			case "timestamp":
-				args, err, stack = checkArgs(token.Loc, stack, TokenString, TokenTimestamp)
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					return
 				}
-				chapters = append(chapters, Chapter{
+				chapStack = append(chapStack, Chapter{
 					Label: string(args[0].Text),
 					Timestamp: args[1].Timestamp,
 				})
 			case "chunk":
-				args, err, stack = checkArgs(token.Loc, stack, TokenTimestamp, TokenTimestamp)
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					return
@@ -141,10 +141,10 @@ func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err erro
 					// TODO: if the name of the chunk is its number, why do we need to store it?
 					// We can just compute it when we need it, can we?
 					Name: fmt.Sprintf("chunk-%02d.mp4", len(chunks)),
-					Chapters: chapters,
+					Chapters: chapStack,
 				})
 
-				chapters = []Chapter{}
+				chapStack = []Chapter{}
 			default:
 				err = &DiagErr{
 					Loc: token.Loc,
