@@ -63,7 +63,7 @@ func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []T
 	return
 }
 
-func loadChunksFromMarkutFile(path string) (chunks []Chunk, err error) {
+func evalMarkutFile(path string) (chunks []Chunk, err error) {
 	var content []byte
 	content, err = os.ReadFile(path)
 	if err != nil {
@@ -311,7 +311,7 @@ func finalSubcommand(args []string) error {
 		return fmt.Errorf("No -input file is provided")
 	}
 
-	chunks, err := loadChunksFromMarkutFile(*markutPtr)
+	chunks, err := evalMarkutFile(*markutPtr)
 	if err != nil {
 		return err
 	}
@@ -375,7 +375,7 @@ func cutSubcommand(args []string) error {
 		return fmt.Errorf("%s is not a correct timestamp for -pad: %w", *padPtr, err)
 	}
 
-	chunks, err := loadChunksFromMarkutFile(*markutPtr)
+	chunks, err := evalMarkutFile(*markutPtr)
 	if err != nil {
 		return err
 	}
@@ -439,7 +439,7 @@ func chaptersSubcommand(args []string) error {
 		return fmt.Errorf("No -markut file is provided")
 	}
 
-	chunks, err := loadChunksFromMarkutFile(*markutPtr)
+	chunks, err := evalMarkutFile(*markutPtr)
 	if err != nil {
 		return err
 	}
@@ -482,7 +482,7 @@ func chunkSubcommand(args []string) error {
 		return fmt.Errorf("No -input file is provided")
 	}
 
-	chunks, err := loadChunksFromMarkutFile(*markutPtr)
+	chunks, err := evalMarkutFile(*markutPtr)
 	if err != nil {
 		return err
 	}
