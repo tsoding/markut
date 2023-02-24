@@ -422,11 +422,11 @@ func cutSubcommand(args []string) error {
 	return nil
 }
 
-func timestampsSubcommand(args []string) error {
-	tsFlag := flag.NewFlagSet("timestamps", flag.ContinueOnError)
-	markutPtr := tsFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+func chaptersSubcommand(args []string) error {
+	chapFlag := flag.NewFlagSet("chapters", flag.ContinueOnError)
+	markutPtr := chapFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 
-	err := tsFlag.Parse(args)
+	err := chapFlag.Parse(args)
 
 	if err == flag.ErrHelp {
 		return nil
@@ -437,7 +437,7 @@ func timestampsSubcommand(args []string) error {
 	}
 
 	if *markutPtr == "" {
-		tsFlag.Usage()
+		chapFlag.Usage()
 		return fmt.Errorf("No -markut file is provided")
 	}
 
@@ -599,8 +599,8 @@ var Subcommands = []Subcommand{
 		Description: "Render the final video",
 	},
 	{
-		Name: "timestamps",
-		Run: timestampsSubcommand,
+		Name: "chapters",
+		Run: chaptersSubcommand,
 		Description: "Generate YouTube timestamps",
 	},
 	// TODO: we probably want to remove inspect subcommand
