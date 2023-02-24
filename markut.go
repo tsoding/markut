@@ -23,16 +23,16 @@ type Chunk struct {
 	Start Secs
 	End   Secs
 	Name  string
-	Timestamps []Timestamp
+	Chapters []Chapter
 }
 
 func (chunk Chunk) Duration() Secs {
 	return chunk.End - chunk.Start
 }
 
-type Timestamp struct {
+type Chapter struct {
+	Timestamp Secs
 	Label string
-	Time Secs
 }
 
 func checkArgs(loc Loc, stack []Token, signature ...TokenKind) (args []Token, err error, nextStack []Token) {
@@ -73,7 +73,7 @@ func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err erro
 	lexer := NewLexer(string(content), path)
 	var token Token
 	var stack []Token
-	var timestamps []Timestamp
+	var chapters []Chapter
 	for {
 		token, err = lexer.Next()
 		if err != nil {
@@ -116,15 +116,17 @@ func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err erro
 		case TokenSymbol:
 			command := string(token.Text)
 			switch command {
+			case "chapter":
+				fallthrough
 			case "timestamp":
 				args, err, stack = checkArgs(token.Loc, stack, TokenString, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					return
 				}
-				timestamps = append(timestamps, Timestamp{
+				chapters = append(chapters, Chapter{
 					Label: string(args[0].Text),
-					Time: args[1].Timestamp,
+					Timestamp: args[1].Timestamp,
 				})
 			case "chunk":
 				args, err, stack = checkArgs(token.Loc, stack, TokenTimestamp, TokenTimestamp)
@@ -136,13 +138,13 @@ func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err erro
 				chunks = append(chunks, Chunk{
 					Start: args[1].Timestamp,
 					End: args[0].Timestamp,
-					// TODO: if the name of the chunk is its number, we do we need to store it
-					// We can just compute it when we need it. Can we?
+					// TODO: if the name of the chunk is its number, why do we need to store it?
+					// We can just compute it when we need it, can we?
 					Name: fmt.Sprintf("chunk-%02d.mp4", len(chunks)),
-					Timestamps: timestamps,
+					Chapters: chapters,
 				})
 
-				timestamps = []Timestamp{}
+				chapters = []Chapter{}
 			default:
 				err = &DiagErr{
 					Loc: token.Loc,
@@ -446,8 +448,8 @@ func timestampsSubcommand(args []string) error {
 
 	var offset Secs = 0;
 	for _, chunk := range chunks {
-		for _, timestamp := range chunk.Timestamps {
-			fmt.Printf("%s - %s\n", secsToTs(int(math.Floor(timestamp.Time - chunk.Start + offset))), timestamp.Label);
+		for _, chapter := range chunk.Chapters {
+			fmt.Printf("%s - %s\n", secsToTs(int(math.Floor(chapter.Timestamp - chunk.Start + offset))), chapter.Label);
 		}
 		offset += chunk.End - chunk.Start;
 	}
