@@ -601,7 +601,7 @@ var Subcommands = []Subcommand{
 	{
 		Name: "chapters",
 		Run: chaptersSubcommand,
-		Description: "Generate YouTube timestamps",
+		Description: "Generate YouTube chapters",
 	},
 	// TODO: we probably want to remove inspect subcommand
 	{
