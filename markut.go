@@ -63,7 +63,7 @@ func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []T
 	return
 }
 
-func loadChunksFromMarkutFile(path string, delay Secs) (chunks []Chunk, err error) {
+func loadChunksFromMarkutFile(path string) (chunks []Chunk, err error) {
 	var content []byte
 	content, err = os.ReadFile(path)
 	if err != nil {
@@ -290,7 +290,6 @@ func finalSubcommand(args []string) error {
 	subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
-	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
 	err := subFlag.Parse(args)
@@ -312,7 +311,7 @@ func finalSubcommand(args []string) error {
 		return fmt.Errorf("No -input file is provided")
 	}
 
-	chunks, err := loadChunksFromMarkutFile(*markutPtr, *delayPtr)
+	chunks, err := loadChunksFromMarkutFile(*markutPtr)
 	if err != nil {
 		return err
 	}
@@ -347,7 +346,6 @@ func cutSubcommand(args []string) error {
 	subFlag := flag.NewFlagSet("cut", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
-	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 	cutPtr := subFlag.Int("cut", 0, "Cut number to render")
 	padPtr := subFlag.String("pad", "00:00:02", "Amount of time to pad around the cut (supports the markut's timestamp format)")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
@@ -377,7 +375,7 @@ func cutSubcommand(args []string) error {
 		return fmt.Errorf("%s is not a correct timestamp for -pad: %w", *padPtr, err)
 	}
 
-	chunks, err := loadChunksFromMarkutFile(*markutPtr, *delayPtr)
+	chunks, err := loadChunksFromMarkutFile(*markutPtr)
 	if err != nil {
 		return err
 	}
@@ -441,7 +439,7 @@ func chaptersSubcommand(args []string) error {
 		return fmt.Errorf("No -markut file is provided")
 	}
 
-	chunks, err := loadChunksFromMarkutFile(*markutPtr, 0)
+	chunks, err := loadChunksFromMarkutFile(*markutPtr)
 	if err != nil {
 		return err
 	}
@@ -461,7 +459,6 @@ func chunkSubcommand(args []string) error {
 	subFlag := flag.NewFlagSet("chunk", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
-	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 	chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
@@ -485,7 +482,7 @@ func chunkSubcommand(args []string) error {
 		return fmt.Errorf("No -input file is provided")
 	}
 
-	chunks, err := loadChunksFromMarkutFile(*markutPtr, *delayPtr)
+	chunks, err := loadChunksFromMarkutFile(*markutPtr)
 	if err != nil {
 		return err
 	}
@@ -508,7 +505,6 @@ func chunkSubcommand(args []string) error {
 func inspectSubcommand(args []string) error {
 	subFlag := flag.NewFlagSet("inspect", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
-	delayPtr := subFlag.Float64("delay", 0, "Delay of markers in seconds")
 
 	err := subFlag.Parse(args)
 	if err == flag.ErrHelp {
@@ -524,7 +520,7 @@ func inspectSubcommand(args []string) error {
 		return fmt.Errorf("No -markut file is provided")
 	}
 
-	chunks, err := loadChunksFromMarkutFile(*markutPtr, *delayPtr)
+	chunks, err := loadChunksFromMarkutFile(*markutPtr)
 	if err != nil {
 		return err
 	}
