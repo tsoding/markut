@@ -502,42 +502,6 @@ func chunkSubcommand(args []string) error {
 	return nil
 }
 
-func inspectSubcommand(args []string) error {
-	subFlag := flag.NewFlagSet("inspect", flag.ContinueOnError)
-	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
-
-	err := subFlag.Parse(args)
-	if err == flag.ErrHelp {
-		return nil
-	}
-
-	if err != nil {
-		return err
-	}
-
-	if *markutPtr == "" {
-		subFlag.Usage()
-		return fmt.Errorf("No -markut file is provided")
-	}
-
-	chunks, err := loadChunksFromMarkutFile(*markutPtr)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Chunks:")
-	for _, chunk := range chunks {
-		fmt.Printf("  Name:  %s\n", chunk.Name)
-		fmt.Printf("  Start: %s (%s)\n", secsToTs(int(chunk.Start)), strconv.FormatFloat(chunk.Start, 'f', -1, 64))
-		fmt.Printf("  End:   %s (%s)\n", secsToTs(int(chunk.End)), strconv.FormatFloat(chunk.End, 'f', -1, 64))
-	}
-
-	fmt.Println("Cuts:")
-	for _, highlight := range highlightChunks(chunks) {
-		fmt.Printf("  %s - %s\n", highlight.timestamp, highlight.message)
-	}
-	return nil
-}
-
 func fixupSubcommand(args []string) error {
 	subFlag := flag.NewFlagSet("fixup", flag.ExitOnError)
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
@@ -598,12 +562,6 @@ var Subcommands = []Subcommand{
 		Name: "chapters",
 		Run: chaptersSubcommand,
 		Description: "Generate YouTube chapters",
-	},
-	// TODO: we probably want to remove inspect subcommand
-	{
-		Name:        "inspect",
-		Run:         inspectSubcommand,
-		Description: "Inspect markers in the Markut file",
 	},
 }
 
