@@ -63,10 +63,12 @@ func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []T
 	return
 }
 
-func evalMarkutFile(path string) (chunks []Chunk, err error) {
-	var content []byte
-	content, err = os.ReadFile(path)
+func evalMarkutFile(path string) (chunks []Chunk, ok bool) {
+	ok = true
+	content, err := os.ReadFile(path)
 	if err != nil {
+		fmt.Printf("ERROR: could not read file %s: %s\n", path, err)
+		ok = false
 		return
 	}
 
@@ -77,6 +79,8 @@ func evalMarkutFile(path string) (chunks []Chunk, err error) {
 	for {
 		token, err = lexer.Next()
 		if err != nil {
+			fmt.Printf("%s\n", err)
+			ok = false
 			return
 		}
 
@@ -89,8 +93,9 @@ func evalMarkutFile(path string) (chunks []Chunk, err error) {
 		case TokenDash:
 			args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp, TokenTimestamp)
 			if err != nil {
-				// TODO: can we use wrapped errors in here?
 				fmt.Printf("%s: ERROR: type check failed for subtraction\n", token.Loc)
+				fmt.Printf("%s\n", err);
+				ok = false
 				return
 			}
 			argsStack = append(argsStack, Token{
@@ -102,6 +107,8 @@ func evalMarkutFile(path string) (chunks []Chunk, err error) {
 			args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp, TokenTimestamp)
 			if err != nil {
 				fmt.Printf("%s: ERROR: type check failed for addition\n", token.Loc)
+				fmt.Printf("%s\n", err);
+				ok = false
 				return
 			}
 			argsStack = append(argsStack, Token{
@@ -122,6 +129,8 @@ func evalMarkutFile(path string) (chunks []Chunk, err error) {
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
 					return
 				}
 				chapStack = append(chapStack, Chapter{
@@ -132,6 +141,8 @@ func evalMarkutFile(path string) (chunks []Chunk, err error) {
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
 					return
 				}
 
@@ -146,17 +157,13 @@ func evalMarkutFile(path string) (chunks []Chunk, err error) {
 
 				chapStack = []Chapter{}
 			default:
-				err = &DiagErr{
-					Loc: token.Loc,
-					Err: fmt.Errorf("Unknown command %s", command),
-				}
+				fmt.Printf("%s: ERROR: Unknown command %s\n", token.Loc, command)
+				ok = false
 				return
 			}
 		default:
-			err = &DiagErr{
-				Loc: token.Loc,
-				Err: fmt.Errorf("Unexpected token %s", TokenKindName[token.Kind]),
-			}
+			fmt.Printf("%s: ERROR: Unexpected token %s\n", TokenKindName[token.Kind]);
+			ok = false;
 			return
 		}
 	}
@@ -314,8 +321,8 @@ func finalSubcommand(args []string) bool {
 		return false
 	}
 
-	chunks, err := evalMarkutFile(*markutPtr)
-	if err != nil {
+	chunks, ok := evalMarkutFile(*markutPtr)
+	if !ok {
 		return false
 	}
 	for _, chunk := range chunks {
@@ -384,8 +391,8 @@ func cutSubcommand(args []string) bool {
 		return false
 	}
 
-	chunks, err := evalMarkutFile(*markutPtr)
-	if err != nil {
+	chunks, ok := evalMarkutFile(*markutPtr)
+	if !ok {
 		return false
 	}
 
@@ -453,8 +460,8 @@ func chaptersSubcommand(args []string) bool {
 		return false
 	}
 
-	chunks, err := evalMarkutFile(*markutPtr)
-	if err != nil {
+	chunks, ok := evalMarkutFile(*markutPtr)
+	if !ok {
 		return false
 	}
 
@@ -499,8 +506,8 @@ func chunkSubcommand(args []string) bool {
 		return false
 	}
 
-	chunks, err := evalMarkutFile(*markutPtr)
-	if err != nil {
+	chunks, ok := evalMarkutFile(*markutPtr)
+	if !ok {
 		return false
 	}
 
