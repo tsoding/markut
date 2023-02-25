@@ -286,7 +286,7 @@ func highlightChunks(chunks []Chunk) []Highlight {
 	return highlights
 }
 
-func finalSubcommand(args []string) error {
+func finalSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
@@ -294,26 +294,29 @@ func finalSubcommand(args []string) error {
 
 	err := subFlag.Parse(args)
 	if err == flag.ErrHelp {
-		return nil
+		return true
 	}
 
 	if err != nil {
-		return err
+		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+		return false
 	}
 
 	if *markutPtr == "" {
 		subFlag.Usage()
-		return fmt.Errorf("No -markut file is provided")
+		fmt.Printf("ERROR: No -markut file is provided\n")
+		return false
 	}
 
 	if *inputPtr == "" {
 		subFlag.Usage()
-		return fmt.Errorf("No -input file is provided")
+		fmt.Printf("ERROR: No -input file is provided\n")
+		return false
 	}
 
 	chunks, err := evalMarkutFile(*markutPtr)
 	if err != nil {
-		return err
+		return false
 	}
 	for _, chunk := range chunks {
 		err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
@@ -325,13 +328,15 @@ func finalSubcommand(args []string) error {
 	listPath := "final-list.txt"
 	err = ffmpegGenerateConcatList(chunks, listPath)
 	if err != nil {
-		return fmt.Errorf("Could not generate final concat list %s: %w", listPath, err)
+		fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
+		return false;
 	}
 
 	outputPath := "output.mp4"
 	err = ffmpegConcatChunks(listPath, outputPath, *yPtr)
 	if err != nil {
-		return fmt.Errorf("Could not generated final output %s: %w", outputPath, err)
+		fmt.Printf("ERROR: Could not generated final output %s: %s\n", outputPath, err)
+		return false
 	}
 
 	fmt.Println("Highlights:")
@@ -339,10 +344,10 @@ func finalSubcommand(args []string) error {
 		fmt.Printf("%s - %s\n", highlight.timestamp, highlight.message)
 	}
 
-	return nil
+	return true
 }
 
-func cutSubcommand(args []string) error {
+func cutSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("cut", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
@@ -352,36 +357,41 @@ func cutSubcommand(args []string) error {
 
 	err := subFlag.Parse(args)
 	if err == flag.ErrHelp {
-		return nil
+		return true
 	}
 
 	if err != nil {
-		return err
+		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+		return false
 	}
 
 	if *markutPtr == "" {
 		subFlag.Usage()
-		return fmt.Errorf("No -markut file is provided")
+		fmt.Printf("ERROR: No -markut file is provided\n")
+		return false
 	}
 
 	if *inputPtr == "" {
 		subFlag.Usage()
-		return fmt.Errorf("No -input file is provided")
+		fmt.Printf("ERROR: No -input file is provided\n")
+		return false
 	}
 
 	pad, err := tsToSecs(*padPtr)
 	if err != nil {
 		subFlag.Usage()
-		return fmt.Errorf("%s is not a correct timestamp for -pad: %w", *padPtr, err)
+		fmt.Printf("ERROR: %s is not a correct timestamp for -pad: %s\n", *padPtr, err)
+		return false
 	}
 
 	chunks, err := evalMarkutFile(*markutPtr)
 	if err != nil {
-		return err
+		return false
 	}
 
 	if *cutPtr+1 >= len(chunks) {
-		return fmt.Errorf("%d is an invalid cut number. There is only %d of them.", *cutPtr, len(chunks)-1)
+		fmt.Printf("ERROR: %d is an invalid cut number. There is only %d of them.\n", *cutPtr, len(chunks)-1)
+		return false
 	}
 
 	cutChunks := []Chunk{
@@ -408,40 +418,44 @@ func cutSubcommand(args []string) error {
 	listPath := fmt.Sprintf(cutListPath, *cutPtr)
 	err = ffmpegGenerateConcatList(cutChunks, listPath)
 	if err != nil {
-		return fmt.Errorf("Could not generate not generate cut concat list %s: %w", cutListPath, err)
+		fmt.Printf("ERROR: Could not generate not generate cut concat list %s: %s\n", cutListPath, err)
+		return false
 	}
 
 	cutOutputPath := "cut-%02d.mp4"
 	err = ffmpegConcatChunks(listPath, fmt.Sprintf(cutOutputPath, *cutPtr), *yPtr)
 	if err != nil {
-		return fmt.Errorf("Could not generate cut output file %s: %w", cutOutputPath, err)
+		fmt.Printf("ERROR: Could not generate cut output file %s: %s\n", cutOutputPath, err)
+		return false
 	}
 
-	return nil
+	return true
 }
 
-func chaptersSubcommand(args []string) error {
+func chaptersSubcommand(args []string) bool {
 	chapFlag := flag.NewFlagSet("chapters", flag.ContinueOnError)
 	markutPtr := chapFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 
 	err := chapFlag.Parse(args)
 
 	if err == flag.ErrHelp {
-		return nil
+		return true
 	}
 
 	if err != nil {
-		return err
+		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+		return false
 	}
 
 	if *markutPtr == "" {
 		chapFlag.Usage()
-		return fmt.Errorf("No -markut file is provided")
+		fmt.Printf("ERROR: No -markut file is provided\n");
+		return false
 	}
 
 	chunks, err := evalMarkutFile(*markutPtr)
 	if err != nil {
-		return err
+		return false
 	}
 
 	var offset Secs = 0;
@@ -452,10 +466,10 @@ func chaptersSubcommand(args []string) error {
 		offset += chunk.End - chunk.Start;
 	}
 
-	return nil
+	return true
 }
 
-func chunkSubcommand(args []string) error {
+func chunkSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("chunk", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
@@ -465,75 +479,83 @@ func chunkSubcommand(args []string) error {
 	err := subFlag.Parse(args)
 
 	if err == flag.ErrHelp {
-		return nil
+		return true
 	}
 
 	if err != nil {
-		return err
+		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+		return false
 	}
 
 	if *markutPtr == "" {
 		subFlag.Usage()
-		return fmt.Errorf("No -markut file is provided")
+		fmt.Printf("ERROR: No -markut file is provided\n")
+		return false
 	}
 
 	if *inputPtr == "" {
 		subFlag.Usage()
-		return fmt.Errorf("No -input file is provided")
+		fmt.Printf("ERROR: No -input file is provided\n")
+		return false
 	}
 
 	chunks, err := evalMarkutFile(*markutPtr)
 	if err != nil {
-		return err
+		return false
 	}
 
 	if *chunkPtr > len(chunks) {
-		return fmt.Errorf("%d is an incorrect chunk number. There is only %d of them.", *chunkPtr, len(chunks))
+		fmt.Printf("ERROR: %d is an incorrect chunk number. There is only %d of them.\n", *chunkPtr, len(chunks))
+		return false
 	}
 
 	chunk := chunks[*chunkPtr]
 
 	err = ffmpegCutChunk(*inputPtr, chunk, *yPtr)
 	if err != nil {
-		return fmt.Errorf("Could not cut the chunk %s: %s", chunk.Name, err)
+		fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name, err)
+		return false
 	}
 
 	fmt.Printf("%s is rendered!\n", chunk.Name)
-	return nil
+	return true
 }
 
-func fixupSubcommand(args []string) error {
+func fixupSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("fixup", flag.ExitOnError)
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
 	err := subFlag.Parse(args)
 	if err == flag.ErrHelp {
-		return nil
+		return true
 	}
 
 	if err != nil {
-		return err
+		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+		return false
 	}
 
 	if *inputPtr == "" {
 		subFlag.Usage()
-		return fmt.Errorf("No -input file is provided")
+		fmt.Printf("ERROR: No -input file is provided\n")
+		return false
 	}
 
 	outputPath := "input.ts"
 	err = ffmpegFixupInput(*inputPtr, outputPath, *yPtr)
 	if err != nil {
-		return fmt.Errorf("Could not fixup input file %s: %w", *inputPtr, err)
+		fmt.Printf("ERROR: Could not fixup input file %s: %s\n", *inputPtr, err)
+		return false
 	}
 	fmt.Printf("Generated %s\n", outputPath)
 
-	return nil
+	return true
 }
 
 type Subcommand struct {
 	Name        string
-	Run         func(args []string) error
+	Run         func(args []string) bool
 	Description string
 }
 
@@ -584,9 +606,8 @@ func main() {
 
 	for _, subcommand := range Subcommands {
 		if subcommand.Name == os.Args[1] {
-			err := subcommand.Run(os.Args[2:])
-			if err != nil {
-				fmt.Printf("%s\n", err)
+			ok := subcommand.Run(os.Args[2:])
+			if !ok {
 				os.Exit(1)
 			}
 			os.Exit(0)
