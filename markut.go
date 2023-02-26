@@ -23,7 +23,6 @@ type Chunk struct {
 	Start Secs
 	End   Secs
 	Name  string
-	Chapters []Chapter
 }
 
 func (chunk Chunk) Duration() Secs {
@@ -31,6 +30,7 @@ func (chunk Chunk) Duration() Secs {
 }
 
 type Chapter struct {
+	Loc Loc
 	Timestamp Secs
 	Label string
 }
@@ -63,7 +63,9 @@ func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []T
 	return
 }
 
-func evalMarkutFile(path string) (chunks []Chunk, ok bool) {
+const MinYouTubeChapterDuration Secs = 10.0
+
+func evalMarkutFile(path string) (chunks []Chunk, chapters []Chapter, ok bool) {
 	ok = true
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -73,9 +75,10 @@ func evalMarkutFile(path string) (chunks []Chunk, ok bool) {
 	}
 
 	lexer := NewLexer(string(content), path)
-	var token Token
-	var argsStack []Token
-	var chapStack []Chapter
+	token := Token{}
+	argsStack := []Token{}
+	chapStack := []Chapter{}
+	chapOffset := 0.0
 	for {
 		token, err = lexer.Next()
 		if err != nil {
@@ -134,6 +137,7 @@ func evalMarkutFile(path string) (chunks []Chunk, ok bool) {
 					return
 				}
 				chapStack = append(chapStack, Chapter{
+					Loc: args[1].Loc,
 					Label: string(args[0].Text),
 					Timestamp: args[1].Timestamp,
 				})
@@ -146,14 +150,25 @@ func evalMarkutFile(path string) (chunks []Chunk, ok bool) {
 					return
 				}
 
-				chunks = append(chunks, Chunk{
+				chunk := Chunk{
 					Start: args[1].Timestamp,
 					End: args[0].Timestamp,
 					// TODO: if the name of the chunk is its number, why do we need to store it?
 					// We can just compute it when we need it, can we?
 					Name: fmt.Sprintf("chunk-%02d.mp4", len(chunks)),
-					Chapters: chapStack,
-				})
+				}
+
+				chunks = append(chunks, chunk)
+
+				for _, chapter := range chapStack {
+					chapters = append(chapters, Chapter{
+						Loc: chapter.Loc,
+						Timestamp: chapter.Timestamp - chunk.Start + chapOffset,
+						Label: chapter.Label,
+					})
+				}
+
+				chapOffset += chunk.End - chunk.Start
 
 				chapStack = []Chapter{}
 			default:
@@ -167,6 +182,17 @@ func evalMarkutFile(path string) (chunks []Chunk, ok bool) {
 			return
 		}
 	}
+
+	for i := 0; i + 1 < len(chapters); i += 1 {
+		duration := chapters[i + 1].Timestamp - chapters[i].Timestamp;
+		if duration < MinYouTubeChapterDuration {
+			fmt.Printf("%s: ERROR: the chapter \"%s\" has duration %s which is shorter than the minimal allowed YouTube chapter duration which is %s (See https://support.google.com/youtube/answer/9884579)\n", chapters[i].Loc, chapters[i].Label, secsToTs(int(math.Floor(duration))), secsToTs(int(math.Floor(MinYouTubeChapterDuration))));
+			fmt.Printf("%s: NOTE: the chapter ends here\n", chapters[i + 1].Loc);
+			ok = false;
+			return;
+		}
+	}
+
 	return
 }
 
@@ -321,7 +347,7 @@ func finalSubcommand(args []string) bool {
 		return false
 	}
 
-	chunks, ok := evalMarkutFile(*markutPtr)
+	chunks, chapters, ok := evalMarkutFile(*markutPtr)
 	if !ok {
 		return false
 	}
@@ -346,9 +372,15 @@ func finalSubcommand(args []string) bool {
 		return false
 	}
 
+	// TODO: maybe these should be called cuts?
 	fmt.Println("Highlights:")
 	for _, highlight := range highlightChunks(chunks) {
 		fmt.Printf("%s - %s\n", highlight.timestamp, highlight.message)
+	}
+	fmt.Println()
+	fmt.Println("Chapters:")
+	for _, chapter := range chapters {
+		fmt.Printf("- %s - %s\n", secsToTs(int(math.Floor(chapter.Timestamp))), chapter.Label)
 	}
 
 	return true
@@ -391,7 +423,7 @@ func cutSubcommand(args []string) bool {
 		return false
 	}
 
-	chunks, ok := evalMarkutFile(*markutPtr)
+	chunks, _, ok := evalMarkutFile(*markutPtr)
 	if !ok {
 		return false
 	}
@@ -460,17 +492,14 @@ func chaptersSubcommand(args []string) bool {
 		return false
 	}
 
-	chunks, ok := evalMarkutFile(*markutPtr)
+	_, chapters, ok := evalMarkutFile(*markutPtr)
 	if !ok {
 		return false
 	}
 
-	var offset Secs = 0;
-	for _, chunk := range chunks {
-		for _, chapter := range chunk.Chapters {
-			fmt.Printf("%s - %s\n", secsToTs(int(math.Floor(chapter.Timestamp - chunk.Start + offset))), chapter.Label);
-		}
-		offset += chunk.End - chunk.Start;
+	fmt.Println("Chapters:")
+	for _, chapter := range chapters {
+		fmt.Printf("- %s - %s\n", secsToTs(int(math.Floor(chapter.Timestamp))), chapter.Label);
 	}
 
 	return true
@@ -506,7 +535,7 @@ func chunkSubcommand(args []string) bool {
 		return false
 	}
 
-	chunks, ok := evalMarkutFile(*markutPtr)
+	chunks, _, ok := evalMarkutFile(*markutPtr)
 	if !ok {
 		return false
 	}
