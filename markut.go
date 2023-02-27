@@ -150,9 +150,19 @@ func evalMarkutFile(path string) (chunks []Chunk, chapters []Chapter, ok bool) {
 					return
 				}
 
+				start := args[1]
+				end := args[0]
+
+				if start.Timestamp > end.Timestamp {
+					fmt.Printf("%s: ERROR: the end of the chunk %s is earlier than its start %s\n", end.Loc, secsToTs(int(math.Floor(end.Timestamp))), secsToTs(int(math.Floor(start.Timestamp))));
+					fmt.Printf("%s: NOTE: the start is located here\n", start.Loc);
+					ok = false
+					return
+				}
+
 				chunk := Chunk{
-					Start: args[1].Timestamp,
-					End: args[0].Timestamp,
+					Start: start.Timestamp,
+					End: end.Timestamp,
 					// TODO: if the name of the chunk is its number, why do we need to store it?
 					// We can just compute it when we need it, can we?
 					Name: fmt.Sprintf("chunk-%02d.mp4", len(chunks)),
@@ -192,6 +202,8 @@ func evalMarkutFile(path string) (chunks []Chunk, chapters []Chapter, ok bool) {
 			return;
 		}
 	}
+
+	// TODO: make sure that chapStack and argsStack are empty at this point
 
 	return
 }
