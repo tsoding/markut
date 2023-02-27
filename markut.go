@@ -171,6 +171,14 @@ func evalMarkutFile(path string) (chunks []Chunk, chapters []Chapter, ok bool) {
 				chunks = append(chunks, chunk)
 
 				for _, chapter := range chapStack {
+					if chapter.Timestamp < chunk.Start || chunk.End < chapter.Timestamp {
+						fmt.Printf("%s: ERROR: the timestamp %s of chapter \"%s\" is outside of the the current chunk\n", chapter.Loc, secsToTs(int(math.Floor(chapter.Timestamp))), chapter.Label)
+						fmt.Printf("%s: NOTE: which starts at %s\n", start.Loc, secsToTs(int(math.Floor(start.Timestamp))))
+						fmt.Printf("%s: NOTE: and ends at %s\n", end.Loc, secsToTs(int(math.Floor(end.Timestamp))))
+						ok = false
+						return
+					}
+
 					chapters = append(chapters, Chapter{
 						Loc: chapter.Loc,
 						Timestamp: chapter.Timestamp - chunk.Start + chapOffset,
