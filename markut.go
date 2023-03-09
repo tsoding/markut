@@ -66,6 +66,8 @@ func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []T
 const MinYouTubeChapterDuration Secs = 10.0
 
 type EvalContext struct {
+	inputPath string
+	inputLoc Loc
 	chunks []Chunk
 	chapters []Chapter
 }
@@ -131,6 +133,26 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 		case TokenSymbol:
 			command := string(token.Text)
 			switch command {
+			case "input":
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
+					return
+				}
+				path := args[0]
+				if len(path.Text) == 0 {
+					fmt.Printf("%s: ERROR: cannot set empty input path\n", path.Loc);
+					ok = false
+					return
+				}
+				if len(context.inputPath) > 0 {
+					fmt.Printf("%s: ERROR: resetting of the input path\n", token.Loc);
+					fmt.Printf("%s: NOTE: input path was already set here\n", context.inputLoc);
+				}
+				context.inputPath = string(path.Text)
+				context.inputLoc = token.Loc
 			case "dup":
 				arity := 1
 				if len(argsStack) < arity {
@@ -358,7 +380,6 @@ func highlightChunks(chunks []Chunk) []Highlight {
 func finalSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
-	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
 	err := subFlag.Parse(args)
@@ -377,18 +398,19 @@ func finalSubcommand(args []string) bool {
 		return false
 	}
 
-	if *inputPtr == "" {
-		subFlag.Usage()
-		fmt.Printf("ERROR: No -input file is provided\n")
-		return false
-	}
 
 	context, ok := evalMarkutFile(*markutPtr)
 	if !ok {
 		return false
 	}
+
+	if context.inputPath == "" {
+		fmt.Printf("ERROR: No input file is provided. Use `input` command in markut file\n")
+		return false
+	}
+
 	for _, chunk := range context.chunks {
-		err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
+		err := ffmpegCutChunk(context.inputPath, chunk, *yPtr)
 		if err != nil {
 			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
 		}
@@ -425,7 +447,6 @@ func finalSubcommand(args []string) bool {
 func cutSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("cut", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
-	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 	cutPtr := subFlag.Int("cut", 0, "Cut number to render")
 	padPtr := subFlag.String("pad", "00:00:02", "Amount of time to pad around the cut (supports the markut's timestamp format)")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
@@ -446,12 +467,6 @@ func cutSubcommand(args []string) bool {
 		return false
 	}
 
-	if *inputPtr == "" {
-		subFlag.Usage()
-		fmt.Printf("ERROR: No -input file is provided\n")
-		return false
-	}
-
 	pad, err := tsToSecs(*padPtr)
 	if err != nil {
 		subFlag.Usage()
@@ -461,6 +476,11 @@ func cutSubcommand(args []string) bool {
 
 	context, ok := evalMarkutFile(*markutPtr)
 	if !ok {
+		return false
+	}
+
+	if context.inputPath == "" {
+		fmt.Printf("ERROR: No input file is provided. Use `input` command in markut file\n")
 		return false
 	}
 
@@ -483,7 +503,7 @@ func cutSubcommand(args []string) bool {
 	}
 
 	for _, chunk := range cutChunks {
-		err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
+		err := ffmpegCutChunk(context.inputPath, chunk, *yPtr)
 		if err != nil {
 			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
 		}
@@ -544,7 +564,6 @@ func chaptersSubcommand(args []string) bool {
 func chunkSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("chunk", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
-	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 	chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
@@ -565,14 +584,13 @@ func chunkSubcommand(args []string) bool {
 		return false
 	}
 
-	if *inputPtr == "" {
-		subFlag.Usage()
-		fmt.Printf("ERROR: No -input file is provided\n")
+	context, ok := evalMarkutFile(*markutPtr)
+	if !ok {
 		return false
 	}
 
-	context, ok := evalMarkutFile(*markutPtr)
-	if !ok {
+	if context.inputPath == "" {
+		fmt.Printf("ERROR: No input file is provided. Use `input` command in markut file\n")
 		return false
 	}
 
@@ -583,7 +601,7 @@ func chunkSubcommand(args []string) bool {
 
 	chunk := context.chunks[*chunkPtr]
 
-	err = ffmpegCutChunk(*inputPtr, chunk, *yPtr)
+	err = ffmpegCutChunk(context.inputPath, chunk, *yPtr)
 	if err != nil {
 		fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name, err)
 		return false
