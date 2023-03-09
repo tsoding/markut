@@ -65,7 +65,12 @@ func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []T
 
 const MinYouTubeChapterDuration Secs = 10.0
 
-func evalMarkutFile(path string) (chunks []Chunk, chapters []Chapter, ok bool) {
+type EvalContext struct {
+	chunks []Chunk
+	chapters []Chapter
+}
+
+func evalMarkutFile(path string) (context EvalContext, ok bool) {
 	ok = true
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -126,6 +131,17 @@ func evalMarkutFile(path string) (chunks []Chunk, chapters []Chapter, ok bool) {
 		case TokenSymbol:
 			command := string(token.Text)
 			switch command {
+			case "dup":
+				arity := 1
+				if len(argsStack) < arity {
+					err = &DiagErr{
+						Loc: token.Loc,
+						Err: fmt.Errorf("Expected %d arguments but got %d", arity, len(argsStack)),
+					}
+					return
+				}
+				n := len(argsStack)
+				argsStack = append(argsStack, argsStack[n-1])
 			case "chapter":
 				fallthrough
 			case "timestamp":
@@ -165,10 +181,10 @@ func evalMarkutFile(path string) (chunks []Chunk, chapters []Chapter, ok bool) {
 					End: end.Timestamp,
 					// TODO: if the name of the chunk is its number, why do we need to store it?
 					// We can just compute it when we need it, can we?
-					Name: fmt.Sprintf("chunk-%02d.mp4", len(chunks)),
+					Name: fmt.Sprintf("chunk-%02d.mp4", len(context.chunks)),
 				}
 
-				chunks = append(chunks, chunk)
+				context.chunks = append(context.chunks, chunk)
 
 				for _, chapter := range chapStack {
 					if chapter.Timestamp < chunk.Start || chunk.End < chapter.Timestamp {
@@ -179,7 +195,7 @@ func evalMarkutFile(path string) (chunks []Chunk, chapters []Chapter, ok bool) {
 						return
 					}
 
-					chapters = append(chapters, Chapter{
+					context.chapters = append(context.chapters, Chapter{
 						Loc: chapter.Loc,
 						Timestamp: chapter.Timestamp - chunk.Start + chapOffset,
 						Label: chapter.Label,
@@ -201,11 +217,11 @@ func evalMarkutFile(path string) (chunks []Chunk, chapters []Chapter, ok bool) {
 		}
 	}
 
-	for i := 0; i + 1 < len(chapters); i += 1 {
-		duration := chapters[i + 1].Timestamp - chapters[i].Timestamp;
+	for i := 0; i + 1 < len(context.chapters); i += 1 {
+		duration := context.chapters[i + 1].Timestamp - context.chapters[i].Timestamp;
 		if duration < MinYouTubeChapterDuration {
-			fmt.Printf("%s: ERROR: the chapter \"%s\" has duration %s which is shorter than the minimal allowed YouTube chapter duration which is %s (See https://support.google.com/youtube/answer/9884579)\n", chapters[i].Loc, chapters[i].Label, secsToTs(int(math.Floor(duration))), secsToTs(int(math.Floor(MinYouTubeChapterDuration))));
-			fmt.Printf("%s: NOTE: the chapter ends here\n", chapters[i + 1].Loc);
+			fmt.Printf("%s: ERROR: the chapter \"%s\" has duration %s which is shorter than the minimal allowed YouTube chapter duration which is %s (See https://support.google.com/youtube/answer/9884579)\n", context.chapters[i].Loc, context.chapters[i].Label, secsToTs(int(math.Floor(duration))), secsToTs(int(math.Floor(MinYouTubeChapterDuration))));
+			fmt.Printf("%s: NOTE: the chapter ends here\n", context.chapters[i + 1].Loc);
 			ok = false;
 			return;
 		}
@@ -367,11 +383,11 @@ func finalSubcommand(args []string) bool {
 		return false
 	}
 
-	chunks, chapters, ok := evalMarkutFile(*markutPtr)
+	context, ok := evalMarkutFile(*markutPtr)
 	if !ok {
 		return false
 	}
-	for _, chunk := range chunks {
+	for _, chunk := range context.chunks {
 		err := ffmpegCutChunk(*inputPtr, chunk, *yPtr)
 		if err != nil {
 			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
@@ -379,7 +395,7 @@ func finalSubcommand(args []string) bool {
 	}
 
 	listPath := "final-list.txt"
-	err = ffmpegGenerateConcatList(chunks, listPath)
+	err = ffmpegGenerateConcatList(context.chunks, listPath)
 	if err != nil {
 		fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
 		return false;
@@ -394,12 +410,12 @@ func finalSubcommand(args []string) bool {
 
 	// TODO: maybe these should be called cuts?
 	fmt.Println("Highlights:")
-	for _, highlight := range highlightChunks(chunks) {
+	for _, highlight := range highlightChunks(context.chunks) {
 		fmt.Printf("%s - %s\n", highlight.timestamp, highlight.message)
 	}
 	fmt.Println()
 	fmt.Println("Chapters:")
-	for _, chapter := range chapters {
+	for _, chapter := range context.chapters {
 		fmt.Printf("- %s - %s\n", secsToTs(int(math.Floor(chapter.Timestamp))), chapter.Label)
 	}
 
@@ -443,25 +459,25 @@ func cutSubcommand(args []string) bool {
 		return false
 	}
 
-	chunks, _, ok := evalMarkutFile(*markutPtr)
+	context, ok := evalMarkutFile(*markutPtr)
 	if !ok {
 		return false
 	}
 
-	if *cutPtr+1 >= len(chunks) {
-		fmt.Printf("ERROR: %d is an invalid cut number. There is only %d of them.\n", *cutPtr, len(chunks)-1)
+	if *cutPtr+1 >= len(context.chunks) {
+		fmt.Printf("ERROR: %d is an invalid cut number. There is only %d of them.\n", *cutPtr, len(context.chunks)-1)
 		return false
 	}
 
 	cutChunks := []Chunk{
 		{
-			Start: chunks[*cutPtr].End - pad,
-			End:   chunks[*cutPtr].End,
+			Start: context.chunks[*cutPtr].End - pad,
+			End:   context.chunks[*cutPtr].End,
 			Name:  fmt.Sprintf("cut-%02d-left.mp4", *cutPtr),
 		},
 		{
-			Start: chunks[*cutPtr+1].Start,
-			End:   chunks[*cutPtr+1].Start + pad,
+			Start: context.chunks[*cutPtr+1].Start,
+			End:   context.chunks[*cutPtr+1].Start + pad,
 			Name:  fmt.Sprintf("cut-%02d-right.mp4", *cutPtr),
 		},
 	}
@@ -512,13 +528,13 @@ func chaptersSubcommand(args []string) bool {
 		return false
 	}
 
-	_, chapters, ok := evalMarkutFile(*markutPtr)
+	context, ok := evalMarkutFile(*markutPtr)
 	if !ok {
 		return false
 	}
 
 	fmt.Println("Chapters:")
-	for _, chapter := range chapters {
+	for _, chapter := range context.chapters {
 		fmt.Printf("- %s - %s\n", secsToTs(int(math.Floor(chapter.Timestamp))), chapter.Label);
 	}
 
@@ -555,17 +571,17 @@ func chunkSubcommand(args []string) bool {
 		return false
 	}
 
-	chunks, _, ok := evalMarkutFile(*markutPtr)
+	context, ok := evalMarkutFile(*markutPtr)
 	if !ok {
 		return false
 	}
 
-	if *chunkPtr > len(chunks) {
-		fmt.Printf("ERROR: %d is an incorrect chunk number. There is only %d of them.\n", *chunkPtr, len(chunks))
+	if *chunkPtr > len(context.chunks) {
+		fmt.Printf("ERROR: %d is an incorrect chunk number. There is only %d of them.\n", *chunkPtr, len(context.chunks))
 		return false
 	}
 
-	chunk := chunks[*chunkPtr]
+	chunk := context.chunks[*chunkPtr]
 
 	err = ffmpegCutChunk(*inputPtr, chunk, *yPtr)
 	if err != nil {
