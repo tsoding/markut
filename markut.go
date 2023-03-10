@@ -23,6 +23,7 @@ type Chunk struct {
 	Start Secs
 	End   Secs
 	Name  string
+	Loc Loc
 }
 
 func (chunk Chunk) Duration() Secs {
@@ -199,6 +200,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 
 				chunk := Chunk{
+					Loc: token.Loc,
 					Start: start.Timestamp,
 					End: end.Timestamp,
 					// TODO: if the name of the chunk is its number, why do we need to store it?
@@ -523,6 +525,8 @@ func cutSubcommand(args []string) bool {
 		fmt.Printf("ERROR: Could not generate cut output file %s: %s\n", cutOutputPath, err)
 		return false
 	}
+
+	fmt.Printf("%s: NOTE: cut is defined in here\n", context.chunks[*cutPtr].Loc);
 
 	return true
 }
