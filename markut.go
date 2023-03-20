@@ -1,3 +1,4 @@
+// TODO: angled brackets are not allowed on YouTube. Let's make `chapters` check for that.
 package main
 
 import (
@@ -24,6 +25,7 @@ type Chunk struct {
 	End   Secs
 	Name  string
 	Loc Loc
+	InputPath string
 }
 
 func (chunk Chunk) Duration() Secs {
@@ -68,7 +70,6 @@ const MinYouTubeChapterDuration Secs = 10.0
 
 type EvalContext struct {
 	inputPath string
-	inputLoc Loc
 	chunks []Chunk
 	chapters []Chapter
 }
@@ -148,12 +149,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					ok = false
 					return
 				}
-				if len(context.inputPath) > 0 {
-					fmt.Printf("%s: ERROR: resetting of the input path\n", token.Loc);
-					fmt.Printf("%s: NOTE: input path was already set here\n", context.inputLoc);
-				}
 				context.inputPath = string(path.Text)
-				context.inputLoc = token.Loc
 			case "dup":
 				arity := 1
 				if len(argsStack) < arity {
@@ -206,6 +202,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					// TODO: if the name of the chunk is its number, why do we need to store it?
 					// We can just compute it when we need it, can we?
 					Name: fmt.Sprintf("chunk-%02d.mp4", len(context.chunks)),
+					InputPath: context.inputPath,
 				}
 
 				context.chunks = append(context.chunks, chunk)
@@ -279,7 +276,7 @@ func logCmd(name string, args ...string) {
 	fmt.Printf("[CMD] %s\n", strings.Join(chunks, " "))
 }
 
-func ffmpegCutChunk(inputPath string, chunk Chunk, y bool) error {
+func ffmpegCutChunk(chunk Chunk, y bool) error {
 	ffmpeg := ffmpegPathToBin()
 	args := []string{}
 
@@ -288,7 +285,7 @@ func ffmpegCutChunk(inputPath string, chunk Chunk, y bool) error {
 	}
 
 	args = append(args, "-ss", strconv.FormatFloat(chunk.Start, 'f', -1, 64))
-	args = append(args, "-i", inputPath)
+	args = append(args, "-i", chunk.InputPath)
 	args = append(args, "-c", "copy")
 	args = append(args, "-t", strconv.FormatFloat(chunk.Duration(), 'f', -1, 64))
 	args = append(args, chunk.Name)
@@ -412,7 +409,7 @@ func finalSubcommand(args []string) bool {
 	}
 
 	for _, chunk := range context.chunks {
-		err := ffmpegCutChunk(context.inputPath, chunk, *yPtr)
+		err := ffmpegCutChunk(chunk, *yPtr)
 		if err != nil {
 			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
 		}
@@ -496,16 +493,18 @@ func cutSubcommand(args []string) bool {
 			Start: context.chunks[*cutPtr].End - pad,
 			End:   context.chunks[*cutPtr].End,
 			Name:  fmt.Sprintf("cut-%02d-left.mp4", *cutPtr),
+			InputPath: context.chunks[*cutPtr].InputPath,
 		},
 		{
 			Start: context.chunks[*cutPtr+1].Start,
 			End:   context.chunks[*cutPtr+1].Start + pad,
 			Name:  fmt.Sprintf("cut-%02d-right.mp4", *cutPtr),
+			InputPath: context.chunks[*cutPtr+1].InputPath,
 		},
 	}
 
 	for _, chunk := range cutChunks {
-		err := ffmpegCutChunk(context.inputPath, chunk, *yPtr)
+		err := ffmpegCutChunk(chunk, *yPtr)
 		if err != nil {
 			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
 		}
@@ -605,7 +604,7 @@ func chunkSubcommand(args []string) bool {
 
 	chunk := context.chunks[*chunkPtr]
 
-	err = ffmpegCutChunk(context.inputPath, chunk, *yPtr)
+	err = ffmpegCutChunk(chunk, *yPtr)
 	if err != nil {
 		fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name, err)
 		return false
