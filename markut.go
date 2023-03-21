@@ -248,7 +248,19 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 		}
 	}
 
-	// TODO: make sure that chapStack and argsStack are empty at this point
+	if len(argsStack) > 0 {
+		ok = false;
+		for i := range argsStack {
+			fmt.Printf("%s: ERROR: unused argument\n", argsStack[i].Loc)
+		}
+	}
+
+	if len(chapStack) > 0 {
+		ok = false;
+		for i := range argsStack {
+			fmt.Printf("%s: ERROR: unused chapter\n", chapStack[i].Loc)
+		}
+	}
 
 	return
 }
