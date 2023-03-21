@@ -530,13 +530,14 @@ func cutSubcommand(args []string) bool {
 		return false
 	}
 
-	cutOutputPath := "cut-%02d.mp4"
-	err = ffmpegConcatChunks(listPath, fmt.Sprintf(cutOutputPath, *cutPtr), *yPtr)
+	cutOutputPath := fmt.Sprintf("cut-%02d.mp4", *cutPtr)
+	err = ffmpegConcatChunks(listPath, cutOutputPath, *yPtr)
 	if err != nil {
 		fmt.Printf("ERROR: Could not generate cut output file %s: %s\n", cutOutputPath, err)
 		return false
 	}
 
+	fmt.Printf("Generated %s\n", cutOutputPath);
 	fmt.Printf("%s: NOTE: cut is defined in here\n", context.chunks[*cutPtr].Loc);
 
 	return true
