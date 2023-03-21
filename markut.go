@@ -74,6 +74,20 @@ type EvalContext struct {
 	chapters []Chapter
 }
 
+func (context EvalContext) PrintSummary() {
+	fmt.Println("Cuts:")
+	secs := 0.0
+	for i := 0; i < len(context.chunks) - 1; i += 1 {
+		fmt.Printf("%s: %s\n", context.chunks[i + 1].Loc, secsToTs(int(secs + context.chunks[i].Duration())))
+		secs += context.chunks[i].Duration()
+	}
+	fmt.Println()
+	fmt.Println("Chapters:")
+	for _, chapter := range context.chapters {
+		fmt.Printf("- %s - %s\n", secsToTs(int(math.Floor(chapter.Timestamp))), chapter.Label)
+	}
+}
+
 func evalMarkutFile(path string) (context EvalContext, ok bool) {
 	ok = true
 	content, err := os.ReadFile(path)
@@ -367,27 +381,6 @@ func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) error {
 	return nil
 }
 
-type Highlight struct {
-	timestamp string
-	message   string
-}
-
-func highlightChunks(chunks []Chunk) []Highlight {
-	secs := 0.0
-	highlights := []Highlight{}
-
-	for _, chunk := range chunks {
-		highlights = append(highlights, Highlight{
-			timestamp: secsToTs(int(secs + chunk.Duration())),
-			message:   "cut",
-		})
-
-		secs += chunk.Duration()
-	}
-
-	return highlights
-}
-
 func finalSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
@@ -441,16 +434,7 @@ func finalSubcommand(args []string) bool {
 		return false
 	}
 
-	// TODO: maybe these should be called cuts?
-	fmt.Println("Highlights:")
-	for _, highlight := range highlightChunks(context.chunks) {
-		fmt.Printf("%s - %s\n", highlight.timestamp, highlight.message)
-	}
-	fmt.Println()
-	fmt.Println("Chapters:")
-	for _, chapter := range context.chapters {
-		fmt.Printf("- %s - %s\n", secsToTs(int(math.Floor(chapter.Timestamp))), chapter.Label)
-	}
+	context.PrintSummary()
 
 	return true
 }
@@ -569,10 +553,7 @@ func chaptersSubcommand(args []string) bool {
 		return false
 	}
 
-	fmt.Println("Chapters:")
-	for _, chapter := range context.chapters {
-		fmt.Printf("- %s - %s\n", secsToTs(int(math.Floor(chapter.Timestamp))), chapter.Label);
-	}
+	context.PrintSummary()
 
 	return true
 }
