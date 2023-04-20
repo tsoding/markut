@@ -77,9 +77,11 @@ type EvalContext struct {
 func (context EvalContext) PrintSummary() {
 	fmt.Println("Cuts:")
 	secs := 0.0
-	for i := 0; i < len(context.chunks) - 1; i += 1 {
-		fmt.Printf("%s: %s\n", context.chunks[i + 1].Loc, secsToTs(int(secs + context.chunks[i].Duration())))
-		secs += context.chunks[i].Duration()
+	for i, chunk := range context.chunks {
+		if i < len(context.chunks) - 1 {
+			fmt.Printf("%s: %s: %s\n", chunk.Loc, secsToTs(int(secs + chunk.Duration())), fmt.Sprintf("cut-%02d.mp4", i))
+			secs += chunk.Duration()
+		}
 	}
 	fmt.Println()
 	fmt.Println("Chapters:")
@@ -164,6 +166,16 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					return
 				}
 				context.inputPath = string(path.Text)
+			case "over":
+				arity := 2
+				if len(argsStack) < arity {
+					err = &DiagErr{
+						Loc: token.Loc,
+						Err: fmt.Errorf("Expected %d arguments but got %d", arity, len(argsStack)),
+					}
+				}
+				n := len(argsStack)
+				argsStack = append(argsStack, argsStack[n-2]);
 			case "dup":
 				arity := 1
 				if len(argsStack) < arity {
