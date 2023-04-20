@@ -68,10 +68,16 @@ func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []T
 
 const MinYouTubeChapterDuration Secs = 10.0
 
+type Cut struct {
+	chunk int
+	pad Secs
+}
+
 type EvalContext struct {
 	inputPath string
 	chunks []Chunk
 	chapters []Chapter
+	cuts []Cut
 }
 
 func (context EvalContext) PrintSummary() {
@@ -201,6 +207,29 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					Loc: args[1].Loc,
 					Label: string(args[0].Text),
 					Timestamp: args[1].Timestamp,
+				})
+			case "cut":
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
+					return
+				}
+				pad := args[0]
+				if len(context.chunks) == 0 {
+					fmt.Printf("%s: ERROR: no chunks defined for a cut\n", token.Loc)
+					ok = false
+					return
+				}
+				if len(context.cuts) > 0 {
+					fmt.Printf("%s: ERROR: multple cuts are not supported right now\n", token.Loc)
+					ok = false
+					return
+				}
+				context.cuts = append(context.cuts, Cut{
+					chunk: len(context.chunks) - 1,
+					pad: pad.Timestamp,
 				})
 			case "chunk":
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp, TokenTimestamp)
@@ -454,8 +483,6 @@ func finalSubcommand(args []string) bool {
 func cutSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("cut", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
-	cutPtr := subFlag.Int("cut", 0, "Cut number to render")
-	padPtr := subFlag.String("pad", "00:00:02", "Amount of time to pad around the cut (supports the markut's timestamp format)")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
 	err := subFlag.Parse(args)
@@ -474,13 +501,6 @@ func cutSubcommand(args []string) bool {
 		return false
 	}
 
-	pad, err := tsToSecs(*padPtr)
-	if err != nil {
-		subFlag.Usage()
-		fmt.Printf("ERROR: %s is not a correct timestamp for -pad: %s\n", *padPtr, err)
-		return false
-	}
-
 	context, ok := evalMarkutFile(*markutPtr)
 	if !ok {
 		return false
@@ -491,23 +511,35 @@ func cutSubcommand(args []string) bool {
 		return false
 	}
 
-	if *cutPtr+1 >= len(context.chunks) {
-		fmt.Printf("ERROR: %d is an invalid cut number. There is only %d of them.\n", *cutPtr, len(context.chunks)-1)
+	if len(context.cuts) == 0 {
+		fmt.Printf("ERROR: No cuts are provided. Use `cut` command after a `chunk` command to define a cut\n");
+		return false;
+	}
+
+	if len(context.cuts) > 1 {
+		fmt.Printf("ERROR: Multiple cuts are not supported right now\n");
+		return false;
+	}
+
+	cut := context.cuts[0];
+
+	if cut.chunk+1 >= len(context.chunks) {
+		fmt.Printf("ERROR: %d is an invalid cut number. There is only %d of them.\n", cut.chunk, len(context.chunks)-1)
 		return false
 	}
 
 	cutChunks := []Chunk{
 		{
-			Start: context.chunks[*cutPtr].End - pad,
-			End:   context.chunks[*cutPtr].End,
-			Name:  fmt.Sprintf("cut-%02d-left.mp4", *cutPtr),
-			InputPath: context.chunks[*cutPtr].InputPath,
+			Start: context.chunks[cut.chunk].End - cut.pad,
+			End:   context.chunks[cut.chunk].End,
+			Name:  fmt.Sprintf("cut-%02d-left.mp4", cut.chunk),
+			InputPath: context.chunks[cut.chunk].InputPath,
 		},
 		{
-			Start: context.chunks[*cutPtr+1].Start,
-			End:   context.chunks[*cutPtr+1].Start + pad,
-			Name:  fmt.Sprintf("cut-%02d-right.mp4", *cutPtr),
-			InputPath: context.chunks[*cutPtr+1].InputPath,
+			Start: context.chunks[cut.chunk+1].Start,
+			End:   context.chunks[cut.chunk+1].Start + cut.pad,
+			Name:  fmt.Sprintf("cut-%02d-right.mp4", cut.chunk),
+			InputPath: context.chunks[cut.chunk+1].InputPath,
 		},
 	}
 
@@ -519,14 +551,14 @@ func cutSubcommand(args []string) bool {
 	}
 
 	cutListPath := "cut-%02d-list.txt"
-	listPath := fmt.Sprintf(cutListPath, *cutPtr)
+	listPath := fmt.Sprintf(cutListPath, cut.chunk)
 	err = ffmpegGenerateConcatList(cutChunks, listPath)
 	if err != nil {
 		fmt.Printf("ERROR: Could not generate not generate cut concat list %s: %s\n", cutListPath, err)
 		return false
 	}
 
-	cutOutputPath := fmt.Sprintf("cut-%02d.mp4", *cutPtr)
+	cutOutputPath := fmt.Sprintf("cut-%02d.mp4", cut.chunk)
 	err = ffmpegConcatChunks(listPath, cutOutputPath, *yPtr)
 	if err != nil {
 		fmt.Printf("ERROR: Could not generate cut output file %s: %s\n", cutOutputPath, err)
@@ -534,7 +566,7 @@ func cutSubcommand(args []string) bool {
 	}
 
 	fmt.Printf("Generated %s\n", cutOutputPath);
-	fmt.Printf("%s: NOTE: cut is defined in here\n", context.chunks[*cutPtr].Loc);
+	fmt.Printf("%s: NOTE: cut is defined in here\n", context.chunks[cut.chunk].Loc);
 
 	return true
 }
