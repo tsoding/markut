@@ -137,6 +137,19 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				Kind: TokenTimestamp,
 				Timestamp: args[1].Timestamp - args[0].Timestamp,
 			})
+		case TokenAsterisk:
+			args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp, TokenTimestamp)
+			if err != nil {
+				fmt.Printf("%s: ERROR: type check failed for multiplication\n", token.Loc)
+				fmt.Printf("%s\n", err);
+				ok = false
+				return
+			}
+			argsStack = append(argsStack, Token{
+				Loc: token.Loc,
+				Kind: TokenTimestamp,
+				Timestamp: args[1].Timestamp * args[0].Timestamp,
+			})
 		case TokenPlus:
 			args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp, TokenTimestamp)
 			if err != nil {
@@ -287,7 +300,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				return
 			}
 		default:
-			fmt.Printf("%s: ERROR: Unexpected token %s\n", TokenKindName[token.Kind]);
+			fmt.Printf("%s: ERROR: Unexpected token %s\n", token.Loc, TokenKindName[token.Kind]);
 			ok = false;
 			return
 		}
