@@ -655,6 +655,7 @@ func chunkSubcommand(args []string) bool {
 func fixupSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("fixup", flag.ExitOnError)
 	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
+	outputPtr := subFlag.String("output", "input.ts", "Path to the output video file")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
 	err := subFlag.Parse(args)
@@ -673,13 +674,12 @@ func fixupSubcommand(args []string) bool {
 		return false
 	}
 
-	outputPath := "input.ts"
-	err = ffmpegFixupInput(*inputPtr, outputPath, *yPtr)
+	err = ffmpegFixupInput(*inputPtr, *outputPtr, *yPtr)
 	if err != nil {
 		fmt.Printf("ERROR: Could not fixup input file %s: %s\n", *inputPtr, err)
 		return false
 	}
-	fmt.Printf("Generated %s\n", outputPath)
+	fmt.Printf("Generated %s\n", *outputPtr)
 
 	return true
 }
