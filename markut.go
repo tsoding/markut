@@ -356,7 +356,7 @@ func logCmd(name string, args ...string) {
 	fmt.Printf("[CMD] %s\n", strings.Join(chunks, " "))
 }
 
-func ffmpegCutChunk(chunk Chunk, y bool) error {
+func ffmpegCutChunk(chunk Chunk, y, transcode bool) error {
 	ffmpeg := ffmpegPathToBin()
 	args := []string{}
 
@@ -366,7 +366,12 @@ func ffmpegCutChunk(chunk Chunk, y bool) error {
 
 	args = append(args, "-ss", strconv.FormatFloat(chunk.Start, 'f', -1, 64))
 	args = append(args, "-i", chunk.InputPath)
-	args = append(args, "-c", "copy")
+	if !transcode {
+		args = append(args, "-c", "copy")
+	} else {
+		// TODO: hack
+		args = append(args, "-ab", "161k")
+	}
 	args = append(args, "-t", strconv.FormatFloat(chunk.Duration(), 'f', -1, 64))
 	args = append(args, chunk.Name)
 
@@ -439,6 +444,7 @@ func finalSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
+	tPtr := subFlag.Bool("t", false, "Allow transcoding the footage. Usually markut just copies the frames for the speed. But sometimes it may results in pretty jarring cuts.")
 
 	err := subFlag.Parse(args)
 	if err == flag.ErrHelp {
@@ -468,7 +474,7 @@ func finalSubcommand(args []string) bool {
 	}
 
 	for _, chunk := range context.chunks {
-		err := ffmpegCutChunk(chunk, *yPtr)
+		err := ffmpegCutChunk(chunk, *yPtr, *tPtr)
 		if err != nil {
 			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
 		}
@@ -497,6 +503,7 @@ func cutSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("cut", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
+	tPtr := subFlag.Bool("t", false, "Allow transcoding the footage. Usually markut just copies the frames for the speed. But sometimes it may results in pretty jarring cuts.")
 
 	err := subFlag.Parse(args)
 	if err == flag.ErrHelp {
@@ -557,7 +564,7 @@ func cutSubcommand(args []string) bool {
 	}
 
 	for _, chunk := range cutChunks {
-		err := ffmpegCutChunk(chunk, *yPtr)
+		err := ffmpegCutChunk(chunk, *yPtr, *tPtr)
 		if err != nil {
 			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
 		}
@@ -620,6 +627,7 @@ func chunkSubcommand(args []string) bool {
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
+	tPtr := subFlag.Bool("t", false, "Allow transcoding the footage. Usually markut just copies the frames for the speed. But sometimes it may results in pretty jarring cuts.")
 
 	err := subFlag.Parse(args)
 
@@ -655,7 +663,7 @@ func chunkSubcommand(args []string) bool {
 
 	chunk := context.chunks[*chunkPtr]
 
-	err = ffmpegCutChunk(chunk, *yPtr)
+	err = ffmpegCutChunk(chunk, *yPtr, *tPtr)
 	if err != nil {
 		fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name, err)
 		return false
