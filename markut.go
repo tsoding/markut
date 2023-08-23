@@ -222,6 +222,14 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					Label: string(args[0].Text),
 					Timestamp: args[1].Timestamp,
 				})
+			case "trace":
+				n := len(context.chunks)
+				if n == 0 {
+					fmt.Printf("%s: ERROR: no chunks defined for a cut\n", token.Loc)
+					ok = false
+					return
+				}
+				fmt.Printf("%s: TRACE: chunk %d, duration %s\n", context.chunks[n-1].Loc, n-1, secsToTs(int(context.chunks[n-1].Duration())));
 			case "cut":
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
 				if err != nil {
