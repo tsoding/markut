@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"math"
+	"io/ioutil"
 )
 
 // TODO: Make secsToTs accept float instead of int
@@ -99,7 +100,7 @@ func (context EvalContext) PrintSummary() {
 
 func evalMarkutFile(path string) (context EvalContext, ok bool) {
 	ok = true
-	content, err := os.ReadFile(path)
+	content, err := ioutil.ReadFile(path)
 	if err != nil {
 		fmt.Printf("ERROR: could not read file %s: %s\n", path, err)
 		ok = false
