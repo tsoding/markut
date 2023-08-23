@@ -86,14 +86,15 @@ func (context EvalContext) PrintSummary() {
 	for i, chunk := range context.chunks {
 		if i < len(context.chunks) - 1 {
 			fmt.Printf("%s: %s: %s\n", chunk.Loc, secsToTs(int(secs + chunk.Duration())), fmt.Sprintf("cut-%02d.mp4", i))
-			secs += chunk.Duration()
 		}
+		secs += chunk.Duration()
 	}
 	fmt.Println()
 	fmt.Println("Chapters:")
 	for _, chapter := range context.chapters {
 		fmt.Printf("- %s - %s\n", secsToTs(int(math.Floor(chapter.Timestamp))), chapter.Label)
 	}
+	fmt.Printf("Length: %s\n", secsToTs(int(secs)));
 }
 
 func evalMarkutFile(path string) (context EvalContext, ok bool) {
