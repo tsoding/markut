@@ -379,8 +379,12 @@ func ffmpegCutChunk(chunk Chunk, y, transcode bool) error {
 	if !transcode {
 		args = append(args, "-c", "copy")
 	} else {
-		// TODO: hack
-		args = append(args, "-ab", "161k")
+		// TODO: unhardcode
+		// Maybe even allow to set those rigth from Markut language
+		args = append(args, "-c:v", "libx264")
+		args = append(args, "-vb", "4000k")
+		args = append(args, "-c:a", "aac")
+		args = append(args, "-ab", "300k")
 	}
 	args = append(args, "-t", strconv.FormatFloat(chunk.Duration(), 'f', -1, 64))
 	args = append(args, chunk.Name)
