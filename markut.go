@@ -13,6 +13,8 @@ import (
 	"io/ioutil"
 )
 
+// TODO: Use fixed point numbers for Secs
+
 // TODO: Make secsToTs accept float instead of int
 func secsToTs(secs int) string {
 	hh := secs / 60 / 60
@@ -208,6 +210,8 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 				n := len(argsStack)
 				argsStack = append(argsStack, argsStack[n-1])
+			// TODO: remove chapters feature
+			// It's not useful anymore
 			case "chapter":
 				fallthrough
 			case "timestamp":
@@ -223,14 +227,87 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					Label: string(args[0].Text),
 					Timestamp: args[1].Timestamp,
 				})
-			case "trace":
-				n := len(context.chunks)
-				if n == 0 {
-					fmt.Printf("%s: ERROR: no chunks defined for a cut\n", token.Loc)
+			case "puts":
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
 					ok = false
 					return
 				}
-				fmt.Printf("%s: TRACE: chunk %d, duration %s\n", context.chunks[n-1].Loc, n-1, secsToTs(int(context.chunks[n-1].Duration())));
+				fmt.Printf("%s", string(args[0].Text));
+			case "putf":
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
+					return
+				}
+				fmt.Printf("%f", args[0].Timestamp);
+			case "putd":
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
+					return
+				}
+				fmt.Printf("%d", int(args[0].Timestamp));
+			case "putt":
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
+					return
+				}
+				fmt.Printf("%s", secsToTs(int(args[0].Timestamp)));
+			case "here":
+				argsStack = append(argsStack, Token{
+					Loc: token.Loc,
+					Kind: TokenString,
+					Text: []rune(token.Loc.String()),
+				})
+			case "chunk_location":
+				n := len(context.chunks)
+				if n == 0 {
+					fmt.Printf("%s: ERROR: no chunks defined\n", token.Loc)
+					ok = false
+					return
+				}
+
+				argsStack = append(argsStack, Token{
+					Loc: token.Loc,
+					Kind: TokenString,
+					Text: []rune(context.chunks[n-1].Loc.String()),
+				})
+			case "chunk_number":
+				n := len(context.chunks)
+				if n == 0 {
+					fmt.Printf("%s: ERROR: no chunks defined\n", token.Loc)
+					ok = false
+					return
+				}
+
+				argsStack = append(argsStack, Token{
+					Loc: token.Loc,
+					Kind: TokenTimestamp,
+					Timestamp: float64(n-1),
+				})
+			case "chunk_duration":
+				n := len(context.chunks)
+				if n == 0 {
+					fmt.Printf("%s: ERROR: no chunks defined\n", token.Loc)
+					ok = false
+					return
+				}
+
+				argsStack = append(argsStack, Token{
+					Loc: token.Loc,
+					Kind: TokenTimestamp,
+					Timestamp: context.chunks[n-1].Duration(),
+				})
 			case "cut":
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
 				if err != nil {
