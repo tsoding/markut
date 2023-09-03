@@ -10,7 +10,7 @@ Install [Go](https://golang.org/) and [ffmpeg](https://www.ffmpeg.org/).
 
 ```console
 $ go build
-$ ./markut final -markut marks.markut -input vod.mp4 -delay 4
+$ ./markut final -markut MARKUT -y
 ```
 
 <!-- TODO: document available stacks of Markut language -->
@@ -44,9 +44,4 @@ chunk
 24:45:09     // 24 hours, 45 minutes and 9 seconds.
 24:45:09.69  // 24 hours, 45 minutes, 9 seconds and 690 milliseconds.
 chunk
-
-69:04:20
-"This is a string literal"
-timestamp    // Push a YouTube timestamp at 69:04:20 with the label "This is a string literal"
-             // onto the timestamp stack
 ```
