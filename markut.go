@@ -1,4 +1,3 @@
-// TODO: angled brackets are not allowed on YouTube. Let's make `chapters` check for that.
 package main
 
 import (
@@ -36,12 +35,6 @@ func (chunk Chunk) Duration() Secs {
 	return chunk.End - chunk.Start
 }
 
-type Chapter struct {
-	Loc Loc
-	Timestamp Secs
-	Label string
-}
-
 func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []Token, err error, nextStack []Token) {
 	if len(argsStack) < len(signature) {
 		err = &DiagErr{
@@ -70,8 +63,6 @@ func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []T
 	return
 }
 
-const MinYouTubeChapterDuration Secs = 10.0
-
 type Cut struct {
 	chunk int
 	pad Secs
@@ -80,7 +71,6 @@ type Cut struct {
 type EvalContext struct {
 	inputPath string
 	chunks []Chunk
-	chapters []Chapter
 	cuts []Cut
 
 	VideoCodec string
@@ -99,10 +89,6 @@ func (context EvalContext) PrintSummary() {
 		secs += chunk.Duration()
 	}
 	fmt.Println()
-	fmt.Println("Chapters:")
-	for _, chapter := range context.chapters {
-		fmt.Printf("- %s - %s\n", secsToTs(int(math.Floor(chapter.Timestamp))), chapter.Label)
-	}
 	fmt.Printf("Length: %s\n", secsToTs(int(secs)));
 }
 
@@ -124,8 +110,6 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 	lexer := NewLexer(string(content), path)
 	token := Token{}
 	argsStack := []Token{}
-	chapStack := []Chapter{}
-	chapOffset := 0.0
 	for {
 		token, err = lexer.Next()
 		if err != nil {
@@ -258,23 +242,6 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 				n := len(argsStack)
 				argsStack = append(argsStack, argsStack[n-1])
-			// TODO: remove chapters feature
-			// It's not useful anymore
-			case "chapter":
-				fallthrough
-			case "timestamp":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString, TokenTimestamp)
-				if err != nil {
-					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
-					fmt.Printf("%s\n", err)
-					ok = false
-					return
-				}
-				chapStack = append(chapStack, Chapter{
-					Loc: args[1].Loc,
-					Label: string(args[0].Text),
-					Timestamp: args[1].Timestamp,
-				})
 			case "puts":
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
 				if err != nil {
@@ -409,26 +376,6 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 
 				context.chunks = append(context.chunks, chunk)
-
-				for _, chapter := range chapStack {
-					if chapter.Timestamp < chunk.Start || chunk.End < chapter.Timestamp {
-						fmt.Printf("%s: ERROR: the timestamp %s of chapter \"%s\" is outside of the the current chunk\n", chapter.Loc, secsToTs(int(math.Floor(chapter.Timestamp))), chapter.Label)
-						fmt.Printf("%s: NOTE: which starts at %s\n", start.Loc, secsToTs(int(math.Floor(start.Timestamp))))
-						fmt.Printf("%s: NOTE: and ends at %s\n", end.Loc, secsToTs(int(math.Floor(end.Timestamp))))
-						ok = false
-						return
-					}
-
-					context.chapters = append(context.chapters, Chapter{
-						Loc: chapter.Loc,
-						Timestamp: chapter.Timestamp - chunk.Start + chapOffset,
-						Label: chapter.Label,
-					})
-				}
-
-				chapOffset += chunk.End - chunk.Start
-
-				chapStack = []Chapter{}
 			default:
 				fmt.Printf("%s: ERROR: Unknown command %s\n", token.Loc, command)
 				ok = false
@@ -441,27 +388,10 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 		}
 	}
 
-	for i := 0; i + 1 < len(context.chapters); i += 1 {
-		duration := context.chapters[i + 1].Timestamp - context.chapters[i].Timestamp;
-		if duration < MinYouTubeChapterDuration {
-			fmt.Printf("%s: ERROR: the chapter \"%s\" has duration %s which is shorter than the minimal allowed YouTube chapter duration which is %s (See https://support.google.com/youtube/answer/9884579)\n", context.chapters[i].Loc, context.chapters[i].Label, secsToTs(int(math.Floor(duration))), secsToTs(int(math.Floor(MinYouTubeChapterDuration))));
-			fmt.Printf("%s: NOTE: the chapter ends here\n", context.chapters[i + 1].Loc);
-			ok = false;
-			return;
-		}
-	}
-
 	if len(argsStack) > 0 {
 		ok = false;
 		for i := range argsStack {
 			fmt.Printf("%s: ERROR: unused argument\n", argsStack[i].Loc)
-		}
-	}
-
-	if len(chapStack) > 0 {
-		ok = false;
-		for i := range argsStack {
-			fmt.Printf("%s: ERROR: unused chapter\n", chapStack[i].Loc)
 		}
 	}
 
@@ -732,11 +662,11 @@ func cutSubcommand(args []string) bool {
 	return true
 }
 
-func chaptersSubcommand(args []string) bool {
-	chapFlag := flag.NewFlagSet("chapters", flag.ContinueOnError)
-	markutPtr := chapFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+func summarySubcommand(args []string) bool {
+	summFlag := flag.NewFlagSet("summary", flag.ContinueOnError)
+	markutPtr := summFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 
-	err := chapFlag.Parse(args)
+	err := summFlag.Parse(args)
 
 	if err == flag.ErrHelp {
 		return true
@@ -748,7 +678,7 @@ func chaptersSubcommand(args []string) bool {
 	}
 
 	if *markutPtr == "" {
-		chapFlag.Usage()
+		summFlag.Usage()
 		fmt.Printf("ERROR: No -markut file is provided\n");
 		return false
 	}
@@ -873,9 +803,9 @@ var Subcommands = []Subcommand{
 		Description: "Render the final video",
 	},
 	{
-		Name: "chapters",
-		Run: chaptersSubcommand,
-		Description: "Generate YouTube chapters",
+		Name: "summary",
+		Run: summarySubcommand,
+		Description: "Print the summary of the video",
 	},
 }
 
