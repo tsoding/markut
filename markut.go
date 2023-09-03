@@ -82,6 +82,11 @@ type EvalContext struct {
 	chunks []Chunk
 	chapters []Chapter
 	cuts []Cut
+
+	VideoCodec string
+	VideoBitrate string
+	AudioCodec string
+	AudioBitrate string
 }
 
 func (context EvalContext) PrintSummary() {
@@ -102,6 +107,12 @@ func (context EvalContext) PrintSummary() {
 }
 
 func evalMarkutFile(path string) (context EvalContext, ok bool) {
+	// Default chunk transcoding parameters
+	context.VideoCodec = "libx264"
+	context.VideoBitrate = "4000k"
+	context.AudioCodec = "aac"
+	context.AudioBitrate = "300k"
+
 	ok = true
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -175,6 +186,42 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 		case TokenSymbol:
 			command := string(token.Text)
 			switch command {
+			case "video_codec":
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
+					return
+				}
+				context.VideoCodec = string(args[0].Text)
+			case "video_bitrate":
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
+					return
+				}
+				context.VideoBitrate = string(args[0].Text)
+			case "audio_codec":
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
+					return
+				}
+				context.AudioCodec = string(args[0].Text)
+			case "audio_bitrate":
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
+					return
+				}
+				context.AudioBitrate = string(args[0].Text)
 			case "input":
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
 				if err != nil {
@@ -444,7 +491,7 @@ func logCmd(name string, args ...string) {
 	fmt.Printf("[CMD] %s\n", strings.Join(chunks, " "))
 }
 
-func ffmpegCutChunk(chunk Chunk, y bool) error {
+func ffmpegCutChunk(context EvalContext, chunk Chunk, y bool) error {
 	ffmpeg := ffmpegPathToBin()
 	args := []string{}
 
@@ -455,12 +502,18 @@ func ffmpegCutChunk(chunk Chunk, y bool) error {
 	args = append(args, "-ss", strconv.FormatFloat(chunk.Start, 'f', -1, 64))
 	args = append(args, "-i", chunk.InputPath)
 
-	// TODO: unhardcode
-	// Maybe even allow to set those right from Markut language
-	args = append(args, "-c:v", "libx264")
-	args = append(args, "-vb", "4000k")
-	args = append(args, "-c:a", "aac")
-	args = append(args, "-ab", "300k")
+	if len(context.VideoCodec) > 0 {
+		args = append(args, "-c:v", context.VideoCodec)
+	}
+	if len(context.VideoBitrate) > 0 {
+		args = append(args, "-vb", context.VideoBitrate)
+	}
+	if len(context.AudioCodec) > 0 {
+		args = append(args, "-c:a", context.AudioCodec)
+	}
+	if len(context.AudioBitrate) > 0 {
+		args = append(args, "-ab", context.AudioBitrate)
+	}
 
 	args = append(args, "-t", strconv.FormatFloat(chunk.Duration(), 'f', -1, 64))
 	args = append(args, chunk.Name)
@@ -563,7 +616,7 @@ func finalSubcommand(args []string) bool {
 	}
 
 	for _, chunk := range context.chunks {
-		err := ffmpegCutChunk(chunk, *yPtr)
+		err := ffmpegCutChunk(context, chunk, *yPtr)
 		if err != nil {
 			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
 		}
@@ -652,7 +705,7 @@ func cutSubcommand(args []string) bool {
 	}
 
 	for _, chunk := range cutChunks {
-		err := ffmpegCutChunk(chunk, *yPtr)
+		err := ffmpegCutChunk(context, chunk, *yPtr)
 		if err != nil {
 			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
 		}
@@ -750,7 +803,7 @@ func chunkSubcommand(args []string) bool {
 
 	chunk := context.chunks[*chunkPtr]
 
-	err = ffmpegCutChunk(chunk, *yPtr)
+	err = ffmpegCutChunk(context, chunk, *yPtr)
 	if err != nil {
 		fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name, err)
 		return false
