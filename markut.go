@@ -72,6 +72,7 @@ type EvalContext struct {
 	inputPath string
 	chunks []Chunk
 	cuts []Cut
+	modified_cuts []int
 
 	VideoCodec string
 	VideoBitrate string
@@ -323,6 +324,13 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					Kind: TokenTimestamp,
 					Timestamp: context.chunks[n-1].Duration(),
 				})
+			case "modified_cut":
+				if len(context.chunks) == 0 {
+					fmt.Printf("%s: ERROR: no chunks defined for a modified_cut\n", token.Loc)
+					ok = false
+					return
+				}
+				context.modified_cuts = append(context.modified_cuts, len(context.chunks) - 1)
 			case "cut":
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
 				if err != nil {
@@ -338,7 +346,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					return
 				}
 				if len(context.cuts) > 0 {
-					fmt.Printf("%s: ERROR: multple cuts are not supported right now\n", token.Loc)
+					fmt.Printf("%s: ERROR: multiple cuts are not supported right now\n", token.Loc)
 					ok = false
 					return
 				}
@@ -517,6 +525,7 @@ func finalSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
+	patchPtr := subFlag.Bool("patch", false, "Patch modified cuts")
 
 	err := subFlag.Parse(args)
 	if err == flag.ErrHelp {
@@ -545,10 +554,27 @@ func finalSubcommand(args []string) bool {
 		return false
 	}
 
-	for _, chunk := range context.chunks {
-		err := ffmpegCutChunk(context, chunk, *yPtr)
-		if err != nil {
-			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
+	if *patchPtr {
+		for _, i := range context.modified_cuts {
+			chunk := context.chunks[i]
+			err := ffmpegCutChunk(context, chunk, *yPtr)
+			if err != nil {
+				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk, err)
+			}
+			if i+1 < len(context.chunks) {
+				chunk = context.chunks[i+1]
+				err = ffmpegCutChunk(context, chunk, *yPtr)
+				if err != nil {
+					fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
+				}
+			}
+		}
+	} else {
+		for _, chunk := range context.chunks {
+			err := ffmpegCutChunk(context, chunk, *yPtr)
+			if err != nil {
+				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
+			}
 		}
 	}
 
