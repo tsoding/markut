@@ -78,6 +78,8 @@ type EvalContext struct {
 	VideoBitrate string
 	AudioCodec string
 	AudioBitrate string
+
+	ExtraOutFlags []string
 }
 
 func (context EvalContext) PrintSummary() {
@@ -210,6 +212,16 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					return
 				}
 				context.AudioBitrate = string(args[0].Text)
+			case "of":
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
+					return
+				}
+				outFlag := args[0]
+				context.ExtraOutFlags = append(context.ExtraOutFlags, string(outFlag.Text))
 			case "input":
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
 				if err != nil {
@@ -455,8 +467,10 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk, y bool) error {
 	if len(context.AudioBitrate) > 0 {
 		args = append(args, "-ab", context.AudioBitrate)
 	}
-
 	args = append(args, "-t", strconv.FormatFloat(chunk.Duration(), 'f', -1, 64))
+	for _, outFlag := range context.ExtraOutFlags {
+		args = append(args, outFlag)
+	}
 	args = append(args, chunk.Name)
 
 	logCmd(ffmpeg, args...)
