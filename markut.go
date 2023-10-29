@@ -90,6 +90,9 @@ func (context EvalContext) PrintSummary() {
 		secs += chunk.Duration()
 	}
 	fmt.Println()
+	fmt.Printf("Chunks Count: %d\n", len(context.chunks))
+	fmt.Printf("Cuts Count: %d\n", len(context.chunks) - 1)
+	fmt.Println()
 	fmt.Printf("Length: %s\n", secsToTs(int(secs)));
 }
 
