@@ -29,6 +29,7 @@ type Chunk struct {
 	Name  string
 	Loc Loc
 	InputPath string
+    Blur bool
 }
 
 func (chunk Chunk) Duration() Secs {
@@ -346,6 +347,13 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					return
 				}
 				context.modified_cuts = append(context.modified_cuts, len(context.chunks) - 1)
+            case "blur":
+				if len(context.chunks) == 0 {
+					fmt.Printf("%s: ERROR: no chunks defined for a blur\n", token.Loc)
+					ok = false
+					return
+				}
+                context.chunks[len(context.chunks)-1].Blur = true
 			case "cut":
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
 				if err != nil {
@@ -468,6 +476,9 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk, y bool) error {
 		args = append(args, "-ab", context.AudioBitrate)
 	}
 	args = append(args, "-t", strconv.FormatFloat(chunk.Duration(), 'f', -1, 64))
+    if chunk.Blur {
+        args = append(args, "-vf", "boxblur=50:5")
+    }
 	for _, outFlag := range context.ExtraOutFlags {
 		args = append(args, outFlag)
 	}
