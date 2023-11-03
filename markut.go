@@ -368,11 +368,6 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					ok = false
 					return
 				}
-				if len(context.cuts) > 0 {
-					fmt.Printf("%s: ERROR: multiple cuts are not supported right now\n", token.Loc)
-					ok = false
-					return
-				}
 				context.cuts = append(context.cuts, Cut{
 					chunk: len(context.chunks) - 1,
 					pad: pad.Timestamp,
@@ -661,57 +656,52 @@ func cutSubcommand(args []string) bool {
 		return false;
 	}
 
-	if len(context.cuts) > 1 {
-		fmt.Printf("ERROR: Multiple cuts are not supported right now\n");
-		return false;
-	}
-
-	cut := context.cuts[0];
-
-	if cut.chunk+1 >= len(context.chunks) {
-		fmt.Printf("ERROR: %d is an invalid cut number. There is only %d of them.\n", cut.chunk, len(context.chunks)-1)
-		return false
-	}
-
-	cutChunks := []Chunk{
-		{
-			Start: context.chunks[cut.chunk].End - cut.pad,
-			End:   context.chunks[cut.chunk].End,
-			Name:  fmt.Sprintf("cut-%02d-left.mp4", cut.chunk),
-			InputPath: context.chunks[cut.chunk].InputPath,
-		},
-		{
-			Start: context.chunks[cut.chunk+1].Start,
-			End:   context.chunks[cut.chunk+1].Start + cut.pad,
-			Name:  fmt.Sprintf("cut-%02d-right.mp4", cut.chunk),
-			InputPath: context.chunks[cut.chunk+1].InputPath,
-		},
-	}
-
-	for _, chunk := range cutChunks {
-		err := ffmpegCutChunk(context, chunk, *yPtr)
-		if err != nil {
-			fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
+	for _, cut := range context.cuts {
+		if cut.chunk+1 >= len(context.chunks) {
+			fmt.Printf("ERROR: %d is an invalid cut number. There is only %d of them.\n", cut.chunk, len(context.chunks)-1)
+			return false
 		}
-	}
 
-	cutListPath := "cut-%02d-list.txt"
-	listPath := fmt.Sprintf(cutListPath, cut.chunk)
-	err = ffmpegGenerateConcatList(cutChunks, listPath)
-	if err != nil {
-		fmt.Printf("ERROR: Could not generate not generate cut concat list %s: %s\n", cutListPath, err)
-		return false
-	}
+		cutChunks := []Chunk{
+			{
+				Start: context.chunks[cut.chunk].End - cut.pad,
+				End:   context.chunks[cut.chunk].End,
+				Name:  fmt.Sprintf("cut-%02d-left.mp4", cut.chunk),
+				InputPath: context.chunks[cut.chunk].InputPath,
+			},
+			{
+				Start: context.chunks[cut.chunk+1].Start,
+				End:   context.chunks[cut.chunk+1].Start + cut.pad,
+				Name:  fmt.Sprintf("cut-%02d-right.mp4", cut.chunk),
+				InputPath: context.chunks[cut.chunk+1].InputPath,
+			},
+		}
 
-	cutOutputPath := fmt.Sprintf("cut-%02d.mp4", cut.chunk)
-	err = ffmpegConcatChunks(listPath, cutOutputPath, *yPtr)
-	if err != nil {
-		fmt.Printf("ERROR: Could not generate cut output file %s: %s\n", cutOutputPath, err)
-		return false
-	}
+		for _, chunk := range cutChunks {
+			err := ffmpegCutChunk(context, chunk, *yPtr)
+			if err != nil {
+				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
+			}
+		}
 
-	fmt.Printf("Generated %s\n", cutOutputPath);
-	fmt.Printf("%s: NOTE: cut is defined in here\n", context.chunks[cut.chunk].Loc);
+		cutListPath := "cut-%02d-list.txt"
+		listPath := fmt.Sprintf(cutListPath, cut.chunk)
+		err = ffmpegGenerateConcatList(cutChunks, listPath)
+		if err != nil {
+			fmt.Printf("ERROR: Could not generate not generate cut concat list %s: %s\n", cutListPath, err)
+			return false
+		}
+
+		cutOutputPath := fmt.Sprintf("cut-%02d.mp4", cut.chunk)
+		err = ffmpegConcatChunks(listPath, cutOutputPath, *yPtr)
+		if err != nil {
+			fmt.Printf("ERROR: Could not generate cut output file %s: %s\n", cutOutputPath, err)
+			return false
+		}
+
+		fmt.Printf("Generated %s\n", cutOutputPath);
+		fmt.Printf("%s: NOTE: cut is defined in here\n", context.chunks[cut.chunk].Loc);
+	}
 
 	return true
 }
