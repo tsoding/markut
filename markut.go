@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path"
 	"strings"
+	"errors"
+	"time"
 	"io/ioutil"
 )
 
@@ -21,10 +23,17 @@ func millisToTs(millis Millis) string {
 type Chunk struct {
 	Start Millis
 	End   Millis
-	Name  string
 	Loc Loc
 	InputPath string
 	Blur bool
+	Unfinished bool
+}
+
+const ChunksFolder = "chunks"
+
+func (chunk Chunk) Name() string {
+	inputPath := strings.ReplaceAll(chunk.InputPath, "/", "_")
+	return fmt.Sprintf("%s/%s-%09d-%09d.mp4", ChunksFolder, inputPath, chunk.Start, chunk.End)
 }
 
 func (chunk Chunk) Duration() Millis {
@@ -92,6 +101,15 @@ func (context EvalContext) PrintSummary() {
 	fmt.Printf("Cuts Count: %d\n", len(context.chunks) - 1)
 	fmt.Println()
 	fmt.Printf("Length: %s\n", millisToTs(millis))
+}
+
+func (context EvalContext) containsChunkWithName(filePath string) bool {
+	for _, chunk := range(context.chunks) {
+		if chunk.Name() == filePath {
+			return true
+		}
+	}
+	return false
 }
 
 func evalMarkutFile(path string) (context EvalContext, ok bool) {
@@ -333,13 +351,20 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					return
 				}
 				context.modified_cuts = append(context.modified_cuts, len(context.chunks) - 1)
-            case "blur":
+			case "blur":
 				if len(context.chunks) == 0 {
 					fmt.Printf("%s: ERROR: no chunks defined for a blur\n", token.Loc)
 					ok = false
 					return
 				}
-                context.chunks[len(context.chunks)-1].Blur = true
+				context.chunks[len(context.chunks)-1].Blur = true
+			case "unfinished":
+				if len(context.chunks) == 0 {
+					fmt.Printf("%s: ERROR: no chunks defined for marking as unfinished\n", token.Loc)
+					ok = false
+					return
+				}
+				context.chunks[len(context.chunks)-1].Unfinished = true
 			case "cut":
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
 				if err != nil {
@@ -381,9 +406,6 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					Loc: token.Loc,
 					Start: start.Timestamp,
 					End: end.Timestamp,
-					// TODO: if the name of the chunk is its number, why do we need to store it?
-					// We can just compute it when we need it, can we?
-					Name: fmt.Sprintf("chunk-%02d.mp4", len(context.chunks)),
 					InputPath: context.inputPath,
 				}
 
@@ -438,6 +460,11 @@ func millisToSecsForFFmpeg(millis Millis) string {
 }
 
 func ffmpegCutChunk(context EvalContext, chunk Chunk, y bool) error {
+	err := os.MkdirAll(ChunksFolder, 0755)
+	if err != nil {
+		return err
+	}
+
 	ffmpeg := ffmpegPathToBin()
 	args := []string{}
 
@@ -467,14 +494,20 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk, y bool) error {
 	for _, outFlag := range context.ExtraOutFlags {
 		args = append(args, outFlag)
 	}
-	args = append(args, chunk.Name)
+	unfinishedChunkName := "unfinished-chunk.mp4"
+	args = append(args, unfinishedChunkName)
 
 	logCmd(ffmpeg, args...)
 	cmd := exec.Command(ffmpeg, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	err = cmd.Run()
+	if err != nil {
+		return err
+	}
+
+	return os.Rename(unfinishedChunkName, chunk.Name())
 }
 
 func ffmpegConcatChunks(listPath string, outputPath string, y bool) error {
@@ -528,7 +561,7 @@ func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) error {
 	defer f.Close()
 
 	for _, chunk := range chunks {
-		fmt.Fprintf(f, "file '%s'\n", chunk.Name)
+		fmt.Fprintf(f, "file '%s'\n", chunk.Name())
 	}
 
 	return nil
@@ -562,11 +595,6 @@ func finalSubcommand(args []string) bool {
 		return false
 	}
 
-	if context.inputPath == "" {
-		fmt.Printf("ERROR: No input file is provided. Use `input` command in markut file\n")
-		return false
-	}
-
 	if *patchPtr {
 		for _, i := range context.modified_cuts {
 			chunk := context.chunks[i]
@@ -578,7 +606,7 @@ func finalSubcommand(args []string) bool {
 				chunk = context.chunks[i+1]
 				err = ffmpegCutChunk(context, chunk, *yPtr)
 				if err != nil {
-					fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
+					fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
 				}
 			}
 		}
@@ -586,7 +614,7 @@ func finalSubcommand(args []string) bool {
 		for _, chunk := range context.chunks {
 			err := ffmpegCutChunk(context, chunk, *yPtr)
 			if err != nil {
-				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
+				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
 			}
 		}
 	}
@@ -636,11 +664,6 @@ func cutSubcommand(args []string) bool {
 		return false
 	}
 
-	if context.inputPath == "" {
-		fmt.Printf("ERROR: No input file is provided. Use `input` command in markut file\n")
-		return false
-	}
-
 	if len(context.cuts) == 0 {
 		fmt.Printf("ERROR: No cuts are provided. Use `cut` command after a `chunk` command to define a cut\n");
 		return false;
@@ -656,13 +679,11 @@ func cutSubcommand(args []string) bool {
 			{
 				Start: context.chunks[cut.chunk].End - cut.pad,
 				End:   context.chunks[cut.chunk].End,
-				Name:  fmt.Sprintf("cut-%02d-left.mp4", cut.chunk),
 				InputPath: context.chunks[cut.chunk].InputPath,
 			},
 			{
 				Start: context.chunks[cut.chunk+1].Start,
 				End:   context.chunks[cut.chunk+1].Start + cut.pad,
-				Name:  fmt.Sprintf("cut-%02d-right.mp4", cut.chunk),
 				InputPath: context.chunks[cut.chunk+1].InputPath,
 			},
 		}
@@ -670,7 +691,7 @@ func cutSubcommand(args []string) bool {
 		for _, chunk := range cutChunks {
 			err := ffmpegCutChunk(context, chunk, *yPtr)
 			if err != nil {
-				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name, err)
+				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
 			}
 		}
 
@@ -755,11 +776,6 @@ func chunkSubcommand(args []string) bool {
 		return false
 	}
 
-	if context.inputPath == "" {
-		fmt.Printf("ERROR: No input file is provided. Use `input` command in markut file\n")
-		return false
-	}
-
 	if *chunkPtr > len(context.chunks) {
 		fmt.Printf("ERROR: %d is an incorrect chunk number. There is only %d of them.\n", *chunkPtr, len(context.chunks))
 		return false
@@ -769,11 +785,11 @@ func chunkSubcommand(args []string) bool {
 
 	err = ffmpegCutChunk(context, chunk, *yPtr)
 	if err != nil {
-		fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name, err)
+		fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
 		return false
 	}
 
-	fmt.Printf("%s is rendered!\n", chunk.Name)
+	fmt.Printf("%s is rendered!\n", chunk.Name())
 	return true
 }
 
@@ -809,6 +825,162 @@ func fixupSubcommand(args []string) bool {
 	return true
 }
 
+func pruneSubcommand(args []string) bool {
+	subFlag := flag.NewFlagSet("prune", flag.ContinueOnError)
+	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+
+	err := subFlag.Parse(args)
+
+	if err == flag.ErrHelp {
+		return true
+	}
+
+	if err != nil {
+		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+		return false
+	}
+
+	if *markutPtr == "" {
+		subFlag.Usage()
+		fmt.Printf("ERROR: No -markut file is provided\n")
+		return false
+	}
+
+	context, ok := evalMarkutFile(*markutPtr)
+	if !ok {
+		return false
+	}
+
+	files, err := ioutil.ReadDir(ChunksFolder)
+	if err != nil {
+		fmt.Printf("ERROR: could not read %s folder: %s\n", ChunksFolder, err);
+		return false;
+	}
+
+	for _, file := range files {
+		if !file.IsDir() {
+			filePath := fmt.Sprintf("%s/%s", ChunksFolder, file.Name());
+			if !context.containsChunkWithName(filePath) {
+				fmt.Printf("INFO: deleting chunk file %s\n", filePath);
+				err = os.Remove(filePath)
+				if err != nil {
+					fmt.Printf("ERROR: could not remove file %s: %s\n", filePath, err)
+					return false;
+				}
+			}
+		}
+	}
+
+	fmt.Printf("DONE\n");
+
+	return true
+}
+
+func watchSubcommand(args []string) bool {
+	subFlag := flag.NewFlagSet("watch", flag.ContinueOnError)
+	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
+
+	err := subFlag.Parse(args)
+
+	if err == flag.ErrHelp {
+		return true
+	}
+
+	if err != nil {
+		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+		return false
+	}
+
+	if *markutPtr == "" {
+		subFlag.Usage()
+		fmt.Printf("ERROR: No -markut file is provided\n")
+		return false
+	}
+
+	for {
+		initialStat, err := os.Stat(*markutPtr)
+		if err != nil {
+			fmt.Printf("ERROR: could not stat %s: %s", *markutPtr, err)
+			return false
+		}
+
+		context, ok := evalMarkutFile(*markutPtr)
+		if !ok {
+			return false
+		}
+
+		for _, chunk := range(context.chunks) {
+			if !chunk.Unfinished {
+				if _, err := os.Stat(chunk.Name()); errors.Is(err, os.ErrNotExist) {
+					err = ffmpegCutChunk(context, chunk, *yPtr)
+					if err != nil {
+						fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
+						return false
+					}
+					break
+				}
+			}
+		}
+
+		// TODO: properly check if everything is finished
+		done := true
+		for _, chunk := range(context.chunks) {
+			if chunk.Unfinished {
+				done = false
+				break
+			}
+
+			if _, err := os.Stat(chunk.Name()); errors.Is(err, os.ErrNotExist) {
+				done = false
+				break
+			}
+		}
+
+		if done {
+			break;
+		}
+
+		fmt.Printf("INFO: %s is not done. Waiting for modifications...\n", *markutPtr);
+		for {
+			time.Sleep(1 * time.Second)
+
+			stat, err := os.Stat(*markutPtr)
+			if err != nil {
+				fmt.Printf("ERROR: could not stat %s: %s\n", *markutPtr, err)
+				continue
+			}
+
+			if stat.Size() != initialStat.Size() || stat.ModTime() != initialStat.ModTime() {
+				break
+			}
+		}
+	}
+
+	context, ok := evalMarkutFile(*markutPtr)
+	if !ok {
+		return false
+	}
+
+	listPath := "final-list.txt"
+	err = ffmpegGenerateConcatList(context.chunks, listPath)
+	if err != nil {
+		fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
+		return false;
+	}
+
+	outputPath := "output.mp4"
+	err = ffmpegConcatChunks(listPath, outputPath, *yPtr)
+	if err != nil {
+		fmt.Printf("ERROR: Could not generated final output %s: %s\n", outputPath, err)
+		return false
+	}
+
+	context.PrintSummary()
+
+	return true
+}
+
 type Subcommand struct {
 	Name        string
 	Run         func(args []string) bool
@@ -840,6 +1012,16 @@ var Subcommands = []Subcommand{
 		Name: "summary",
 		Run: summarySubcommand,
 		Description: "Print the summary of the video",
+	},
+	{
+		Name: "prune",
+		Run: pruneSubcommand,
+		Description: "Prune unused chunks",
+	},
+	{
+		Name: "watch",
+		Run: watchSubcommand,
+		Description: "Render finished chunks in watch mode every time MARKUT file is modified",
 	},
 }
 
