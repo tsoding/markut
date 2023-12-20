@@ -6,33 +6,28 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"strconv"
 	"strings"
-	"math"
 	"io/ioutil"
 )
 
-// TODO: Use fixed point numbers for Secs
-// The resolution could depend on the FPS
-
-// TODO: Make secsToTs accept float instead of int
-func secsToTs(secs int) string {
-	hh := secs / 60 / 60
-	mm := secs / 60 % 60
-	ss := secs % 60
-	return fmt.Sprintf("%02d:%02d:%02d", hh, mm, ss)
+func millisToTs(millis Millis) string {
+	hh := millis / 1000 / 60 / 60
+	mm := millis / 1000 / 60 % 60
+	ss := millis / 1000 % 60
+	ms := millis % 1000
+	return fmt.Sprintf("%02d:%02d:%02d.%03d", hh, mm, ss, ms)
 }
 
 type Chunk struct {
-	Start Secs
-	End   Secs
+	Start Millis
+	End   Millis
 	Name  string
 	Loc Loc
 	InputPath string
-    Blur bool
+	Blur bool
 }
 
-func (chunk Chunk) Duration() Secs {
+func (chunk Chunk) Duration() Millis {
 	return chunk.End - chunk.Start
 }
 
@@ -66,7 +61,7 @@ func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []T
 
 type Cut struct {
 	chunk int
-	pad Secs
+	pad Millis
 }
 
 type EvalContext struct {
@@ -85,18 +80,18 @@ type EvalContext struct {
 
 func (context EvalContext) PrintSummary() {
 	fmt.Println("Cuts:")
-	secs := 0.0
+	var millis Millis = 0
 	for i, chunk := range context.chunks {
 		if i < len(context.chunks) - 1 {
-			fmt.Printf("%s: %s: %s\n", chunk.Loc, secsToTs(int(secs + chunk.Duration())), fmt.Sprintf("cut-%02d.mp4", i))
+			fmt.Printf("%s: %s: %s\n", chunk.Loc, millisToTs(millis + chunk.Duration()), fmt.Sprintf("cut-%02d.mp4", i))
 		}
-		secs += chunk.Duration()
+		millis += chunk.Duration()
 	}
 	fmt.Println()
 	fmt.Printf("Chunks Count: %d\n", len(context.chunks))
 	fmt.Printf("Cuts Count: %d\n", len(context.chunks) - 1)
 	fmt.Println()
-	fmt.Printf("Length: %s\n", secsToTs(int(secs)));
+	fmt.Printf("Length: %s\n", millisToTs(millis))
 }
 
 func evalMarkutFile(path string) (context EvalContext, ok bool) {
@@ -268,15 +263,6 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					return
 				}
 				fmt.Printf("%s", string(args[0].Text));
-			case "putf":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
-				if err != nil {
-					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
-					fmt.Printf("%s\n", err)
-					ok = false
-					return
-				}
-				fmt.Printf("%f", args[0].Timestamp);
 			case "putd":
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
 				if err != nil {
@@ -294,7 +280,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					ok = false
 					return
 				}
-				fmt.Printf("%s", secsToTs(int(args[0].Timestamp)));
+				fmt.Printf("%s", millisToTs(args[0].Timestamp));
 			case "here":
 				argsStack = append(argsStack, Token{
 					Loc: token.Loc,
@@ -325,7 +311,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				argsStack = append(argsStack, Token{
 					Loc: token.Loc,
 					Kind: TokenTimestamp,
-					Timestamp: float64(n-1),
+					Timestamp: Millis(n-1),
 				})
 			case "chunk_duration":
 				n := len(context.chunks)
@@ -385,7 +371,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				end := args[0]
 
 				if start.Timestamp > end.Timestamp {
-					fmt.Printf("%s: ERROR: the end of the chunk %s is earlier than its start %s\n", end.Loc, secsToTs(int(math.Floor(end.Timestamp))), secsToTs(int(math.Floor(start.Timestamp))));
+					fmt.Printf("%s: ERROR: the end of the chunk %s is earlier than its start %s\n", end.Loc, millisToTs(end.Timestamp), millisToTs(start.Timestamp));
 					fmt.Printf("%s: NOTE: the start is located here\n", start.Loc);
 					ok = false
 					return
@@ -447,6 +433,10 @@ func logCmd(name string, args ...string) {
 	fmt.Printf("[CMD] %s\n", strings.Join(chunks, " "))
 }
 
+func millisToSecsForFFmpeg(millis Millis) string {
+	return fmt.Sprintf("%d.%03d", millis/1000, millis%1000)
+}
+
 func ffmpegCutChunk(context EvalContext, chunk Chunk, y bool) error {
 	ffmpeg := ffmpegPathToBin()
 	args := []string{}
@@ -455,7 +445,7 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk, y bool) error {
 		args = append(args, "-y")
 	}
 
-	args = append(args, "-ss", strconv.FormatFloat(chunk.Start, 'f', -1, 64))
+	args = append(args, "-ss", millisToSecsForFFmpeg(chunk.Start))
 	args = append(args, "-i", chunk.InputPath)
 
 	if len(context.VideoCodec) > 0 {
@@ -470,10 +460,10 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk, y bool) error {
 	if len(context.AudioBitrate) > 0 {
 		args = append(args, "-ab", context.AudioBitrate)
 	}
-	args = append(args, "-t", strconv.FormatFloat(chunk.Duration(), 'f', -1, 64))
-    if chunk.Blur {
-        args = append(args, "-vf", "boxblur=50:5")
-    }
+	args = append(args, "-t", millisToSecsForFFmpeg(chunk.Duration()))
+	if chunk.Blur {
+		args = append(args, "-vf", "boxblur=50:5")
+	}
 	for _, outFlag := range context.ExtraOutFlags {
 		args = append(args, outFlag)
 	}

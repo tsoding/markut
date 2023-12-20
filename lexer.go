@@ -7,34 +7,68 @@ import (
 	"strconv"
 )
 
-type Secs = float64
+type Millis = int64
 
-func tsToSecs(ts string) (Secs, error) {
+// TODO: we really need more precise error reported for timestamp tokens.
+// Like the diagnostics should point out at specific characters that are
+// incorrect.
+
+func parseSsAndMs(s string) (ss int64, ms Millis, err error) {
+	switch comps := strings.Split(s, "."); len(comps) {
+	case 2:
+		ss, err = strconv.ParseInt(comps[0], 10, 64);
+		if err != nil {
+			return
+		}
+		runes := []rune(comps[1])
+		ms = 0
+		for i := 0; i < 3; i += 1 {
+			ms = ms*10
+			if i < len(runes) {
+				 ms += int64(runes[i] - '0')
+			}
+		}
+		return
+	case 1:
+		ss, err = strconv.ParseInt(comps[0], 10, 64);
+		if err != nil {
+			return
+		}
+		ms = 0
+		return
+	default:
+		err = fmt.Errorf("Unexpected amount of components in the seconds (%d): %s", len(comps), s)
+		return
+	}
+}
+
+func tsToMillis(ts string) (Millis, error) {
 	var err error = nil
-	var mm, hh int = 0, 0
-	var ss Secs = 0
-	var index = 0
+	var mm, hh, ss int64 = 0, 0, 0
+	var ms Millis = 0
+	index := 0
 	switch comps := strings.Split(ts, ":"); len(comps) {
 	case 3:
-		hh, err = strconv.Atoi(comps[index])
+		hh, err = strconv.ParseInt(comps[index], 10, 64)
 		if err != nil {
 			return 0, err
 		}
 		index += 1
 		fallthrough
 	case 2:
-		mm, err = strconv.Atoi(comps[index])
+		mm, err = strconv.ParseInt(comps[index], 10, 64)
 		if err != nil {
 			return 0, err
 		}
 		index += 1
 		fallthrough
 	case 1:
-		ss, err = strconv.ParseFloat(comps[index], 64)
+		ss, ms, err = parseSsAndMs(comps[index])
 		if err != nil {
 			return 0, err
 		}
-		return 60*60*Secs(hh) + 60*Secs(mm) + ss, nil
+
+		return 60*60*1000*Millis(hh) + 60*1000*Millis(mm) + Millis(ss)*1000 + ms, nil
 	default:
 		return 0, fmt.Errorf("Unexpected amount of components in the timestamp (%d)", len(comps))
 	}
@@ -133,7 +167,7 @@ var LiteralTokens = []LiteralToken{
 type Token struct {
 	Kind   TokenKind
 	Text   []rune
-	Timestamp Secs
+	Timestamp Millis
 	Loc    Loc
 }
 
@@ -347,7 +381,7 @@ func (lexer *Lexer) ChopToken() (token Token, err error) {
 		}
 
 		token.Text = lexer.Content[begin:lexer.Cur]
-		token.Timestamp, err = tsToSecs(string(token.Text))
+		token.Timestamp, err = tsToMillis(string(token.Text))
 		if err != nil {
 			err = &DiagErr{
 				Loc: token.Loc,
