@@ -7,7 +7,7 @@ import (
 	"strconv"
 )
 
-type Millis = int64
+type Millis int64
 
 // TODO: we really need more precise error reported for timestamp tokens.
 // Like the diagnostics should point out at specific characters that are
@@ -25,7 +25,7 @@ func parseSsAndMs(s string) (ss int64, ms Millis, err error) {
 		for i := 0; i < 3; i += 1 {
 			ms = ms*10
 			if i < len(runes) {
-				 ms += int64(runes[i] - '0')
+				 ms += Millis(runes[i] - '0')
 			}
 		}
 		return
