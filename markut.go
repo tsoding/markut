@@ -567,6 +567,7 @@ func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) error {
 	return nil
 }
 
+// TODO: `final` subcommand should not render already cached chunks. Just like the watch mode.
 func finalSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
@@ -876,6 +877,7 @@ func pruneSubcommand(args []string) bool {
 	return true
 }
 
+// TODO: Maybe watch mode should just a flag for the `final` subcommand
 func watchSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("watch", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
