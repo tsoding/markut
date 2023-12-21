@@ -33,7 +33,13 @@ const ChunksFolder = "chunks"
 
 func (chunk Chunk) Name() string {
 	inputPath := strings.ReplaceAll(chunk.InputPath, "/", "_")
-	return fmt.Sprintf("%s/%s-%09d-%09d.mp4", ChunksFolder, inputPath, chunk.Start, chunk.End)
+	sb := strings.Builder{}
+	fmt.Fprintf(&sb, "%s/%s-%09d-%09d", ChunksFolder, inputPath, chunk.Start, chunk.End)
+	if chunk.Blur {
+		sb.WriteString("-blur")
+	}
+	sb.WriteString(".mp4")
+	return sb.String()
 }
 
 func (chunk Chunk) Duration() Millis {
