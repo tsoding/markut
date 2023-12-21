@@ -899,65 +899,38 @@ func watchSubcommand(args []string) bool {
 	}
 
 	for {
-		initialStat, err := os.Stat(*markutPtr)
-		if err != nil {
-			fmt.Printf("ERROR: could not stat %s: %s", *markutPtr, err)
-			return false
-		}
+		// NOTE: always use rsync(1) for updating the MARKUT file remotely.
+		// This kind of crappy modification checking needs at least some sort of atomicity.
+		// rsync(1) is as atomic as rename(2). So it's alright for majority of the cases.
 
 		context, ok := evalMarkutFile(*markutPtr)
 		if !ok {
 			return false
 		}
 
-		for _, chunk := range(context.chunks) {
-			if !chunk.Unfinished {
-				if _, err := os.Stat(chunk.Name()); errors.Is(err, os.ErrNotExist) {
-					err = ffmpegCutChunk(context, chunk, *yPtr)
-					if err != nil {
-						fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
-						return false
-					}
-					break
-				}
-			}
-		}
-
-		// TODO: properly check if everything is finished
 		done := true
 		for _, chunk := range(context.chunks) {
 			if chunk.Unfinished {
 				done = false
-				break
+				continue
 			}
 
 			if _, err := os.Stat(chunk.Name()); errors.Is(err, os.ErrNotExist) {
+				err = ffmpegCutChunk(context, chunk, *yPtr)
+				if err != nil {
+					fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
+					return false
+				}
 				done = false
 				break
 			}
 		}
 
 		if done {
-			break;
+			break
 		}
 
-		// NOTE: always use rsync(1) for updating the MARKUT file remotely.
-		// This kind of crappy modification checking needs at least some sort of atomicity.
-		// rsync(1) is as atomic as rename(2). So it's alright for majority of the cases.
-		fmt.Printf("INFO: %s is not done. Waiting for modifications...\n", *markutPtr);
-		for {
-			time.Sleep(1 * time.Second)
-
-			stat, err := os.Stat(*markutPtr)
-			if err != nil {
-				fmt.Printf("ERROR: could not stat %s: %s\n", *markutPtr, err)
-				continue
-			}
-
-			if stat.Size() != initialStat.Size() || stat.ModTime() != initialStat.ModTime() {
-				break
-			}
-		}
+		time.Sleep(1 * time.Second)
 	}
 
 	context, ok := evalMarkutFile(*markutPtr)
