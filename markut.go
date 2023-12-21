@@ -941,6 +941,9 @@ func watchSubcommand(args []string) bool {
 			break;
 		}
 
+		// NOTE: always use rsync(1) for updating the MARKUT file remotely.
+		// This kind of crappy modification checking needs at least some sort of atomicity.
+		// rsync(1) is as atomic as rename(2). So it's alright for majority of the cases.
 		fmt.Printf("INFO: %s is not done. Waiting for modifications...\n", *markutPtr);
 		for {
 			time.Sleep(1 * time.Second)
