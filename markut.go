@@ -898,6 +898,7 @@ func watchSubcommand(args []string) bool {
 		return false
 	}
 
+	fmt.Printf("INFO: Waiting for updates to %s\n", *markutPtr)
 	for {
 		// NOTE: always use rsync(1) for updating the MARKUT file remotely.
 		// This kind of crappy modification checking needs at least some sort of atomicity.
@@ -921,6 +922,7 @@ func watchSubcommand(args []string) bool {
 					fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
 					return false
 				}
+				fmt.Printf("INFO: Waiting for more updates to %s\n", *markutPtr)
 				done = false
 				break
 			}
