@@ -95,18 +95,23 @@ type EvalContext struct {
 
 func (context EvalContext) PrintSummary() {
 	fmt.Println("Cuts:")
-	var millis Millis = 0
+	var fullLength Millis = 0
+	var finishedLength Millis = 0
 	for i, chunk := range context.chunks {
 		if i < len(context.chunks) - 1 {
-			fmt.Printf("%s: %s: %s\n", chunk.Loc, millisToTs(millis + chunk.Duration()), fmt.Sprintf("cut-%02d.mp4", i))
+			fmt.Printf("%s: %s: %s\n", chunk.Loc, millisToTs(fullLength + chunk.Duration()), fmt.Sprintf("cut-%02d.mp4", i))
 		}
-		millis += chunk.Duration()
+		fullLength += chunk.Duration()
+		if !chunk.Unfinished {
+			finishedLength += chunk.Duration()
+		}
 	}
 	fmt.Println()
 	fmt.Printf("Chunks Count: %d\n", len(context.chunks))
 	fmt.Printf("Cuts Count: %d\n", len(context.chunks) - 1)
 	fmt.Println()
-	fmt.Printf("Length: %s\n", millisToTs(millis))
+	fmt.Printf("Finished Length: %s\n", millisToTs(finishedLength))
+	fmt.Printf("Full Length:     %s\n", millisToTs(fullLength))
 }
 
 func (context EvalContext) containsChunkWithName(filePath string) bool {
