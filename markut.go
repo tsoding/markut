@@ -102,6 +102,7 @@ func (context EvalContext) PrintSummary() {
 	fmt.Println("Cuts:")
 	var fullLength Millis = 0
 	var finishedLength Millis = 0
+	var renderedLength Millis = 0
 	for i, chunk := range context.chunks {
 		if i < len(context.chunks) - 1 {
 			fmt.Printf("%s: %s: %s\n", chunk.Loc, millisToTs(fullLength + chunk.Duration()), fmt.Sprintf("cut-%02d.mp4", i))
@@ -110,12 +111,16 @@ func (context EvalContext) PrintSummary() {
 		if !chunk.Unfinished {
 			finishedLength += chunk.Duration()
 		}
+		if _, err := os.Stat(chunk.Name()); err == nil {
+			renderedLength += chunk.Duration()
+		}
 	}
 	fmt.Println()
 	fmt.Printf("Chunks Count: %d\n", len(context.chunks))
 	fmt.Printf("Cuts Count: %d\n", len(context.chunks) - 1)
 	fmt.Println()
 	fmt.Printf("Finished Length: %s\n", millisToTs(finishedLength))
+	fmt.Printf("Rendered Length: %s\n", millisToTs(renderedLength))
 	fmt.Printf("Full Length:     %s\n", millisToTs(fullLength))
 }
 
