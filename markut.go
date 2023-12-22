@@ -475,7 +475,17 @@ func millisToSecsForFFmpeg(millis Millis) string {
 }
 
 func ffmpegCutChunk(context EvalContext, chunk Chunk, y bool) error {
-	err := os.MkdirAll(ChunksFolder, 0755)
+	_, err := os.Stat(chunk.Name())
+	if err == nil {
+		fmt.Printf("INFO: %s is already rendered\n", chunk.Name());
+		return nil;
+	}
+
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	err = os.MkdirAll(ChunksFolder, 0755)
 	if err != nil {
 		return err
 	}
