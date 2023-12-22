@@ -13,11 +13,16 @@ import (
 )
 
 func millisToTs(millis Millis) string {
+	sign := ""
+	if millis < 0 {
+		sign = "-"
+		millis = -millis
+	}
 	hh := millis / 1000 / 60 / 60
 	mm := millis / 1000 / 60 % 60
 	ss := millis / 1000 % 60
 	ms := millis % 1000
-	return fmt.Sprintf("%02d:%02d:%02d.%03d", hh, mm, ss, ms)
+	return fmt.Sprintf("%s%02d:%02d:%02d.%03d", sign, hh, mm, ss, ms)
 }
 
 type Chunk struct {
@@ -392,6 +397,18 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 
 				start := args[1]
 				end := args[0]
+
+				if start.Timestamp < 0 {
+					fmt.Printf("%s: ERROR: the start of the chunk is negative %s\n", start.Loc, millisToTs(start.Timestamp));
+					ok = false
+					return
+				}
+
+				if end.Timestamp < 0 {
+					fmt.Printf("%s: ERROR: the end of the chunk is negative %s\n", end.Loc, millisToTs(end.Timestamp));
+					ok = false
+					return
+				}
 
 				if start.Timestamp > end.Timestamp {
 					fmt.Printf("%s: ERROR: the end of the chunk %s is earlier than its start %s\n", end.Loc, millisToTs(end.Timestamp), millisToTs(start.Timestamp));
