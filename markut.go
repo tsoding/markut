@@ -119,8 +119,8 @@ func (context EvalContext) PrintSummary() {
 	fmt.Printf("Chunks Count: %d\n", len(context.chunks))
 	fmt.Printf("Cuts Count: %d\n", len(context.chunks) - 1)
 	fmt.Println()
-	fmt.Printf("Finished Length: %s\n", millisToTs(finishedLength))
 	fmt.Printf("Rendered Length: %s\n", millisToTs(renderedLength))
+	fmt.Printf("Finished Length: %s\n", millisToTs(finishedLength))
 	fmt.Printf("Full Length:     %s\n", millisToTs(fullLength))
 }
 
