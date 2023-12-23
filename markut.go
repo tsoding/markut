@@ -366,6 +366,13 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					return
 				}
 				context.chunks[len(context.chunks)-1].Blur = true
+			case "removed":
+				if len(context.chunks) == 0 {
+					fmt.Printf("%s: ERROR: no chunks defined for removal\n", token.Loc)
+					ok = false
+					return
+				}
+				context.chunks = context.chunks[:len(context.chunks)-1]
 			case "unfinished":
 				if len(context.chunks) == 0 {
 					fmt.Printf("%s: ERROR: no chunks defined for marking as unfinished\n", token.Loc)
