@@ -295,6 +295,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					return
 				}
 				n := len(argsStack)
+				// TODO: the location of the dupped value should be the location of the "dup" token
 				argsStack = append(argsStack, argsStack[n-1])
 			case "chapter":
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString, TokenTimestamp)
