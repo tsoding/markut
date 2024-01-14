@@ -553,7 +553,9 @@ func millisToSecsForFFmpeg(millis Millis) string {
 	return fmt.Sprintf("%d.%03d", millis/1000, millis%1000)
 }
 
-func ffmpegCutChunk(context EvalContext, chunk Chunk, y bool) error {
+func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
+	// TODO: Maybe we should remove this check? We already pass -n to
+	// ffmpeg down there...
 	_, err := os.Stat(chunk.Name())
 	if err == nil {
 		fmt.Printf("INFO: %s is already rendered\n", chunk.Name());
@@ -572,9 +574,9 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk, y bool) error {
 	ffmpeg := ffmpegPathToBin()
 	args := []string{}
 
-	if y {
-		args = append(args, "-y")
-	}
+	// Rendering chunks is expensive. So if the chunk already exists,
+	// we do not rerender it.
+	args = append(args, "-n");
 
 	args = append(args, "-ss", millisToSecsForFFmpeg(chunk.Start))
 	args = append(args, "-i", chunk.InputPath)
@@ -614,13 +616,14 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk, y bool) error {
 	return os.Rename(unfinishedChunkName, chunk.Name())
 }
 
-func ffmpegConcatChunks(listPath string, outputPath string, y bool) error {
+func ffmpegConcatChunks(listPath string, outputPath string) error {
 	ffmpeg := ffmpegPathToBin()
 	args := []string{}
 
-	if y {
-		args = append(args, "-y")
-	}
+	// Unlike ffmpegCutChunk(), concatinating chunks is really
+	// cheap. So we can just allow ourselves to always do that no
+	// matter what.
+	args = append(args, "-y")
 
 	args = append(args, "-f", "concat")
 	args = append(args, "-safe", "0")
@@ -675,7 +678,6 @@ func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) error {
 func finalSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
-	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 	patchPtr := subFlag.Bool("patch", false, "Patch modified cuts")
 
 	err := subFlag.Parse(args)
@@ -703,13 +705,13 @@ func finalSubcommand(args []string) bool {
 	if *patchPtr {
 		for _, i := range context.modified_cuts {
 			chunk := context.chunks[i]
-			err := ffmpegCutChunk(context, chunk, *yPtr)
+			err := ffmpegCutChunk(context, chunk)
 			if err != nil {
 				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk, err)
 			}
 			if i+1 < len(context.chunks) {
 				chunk = context.chunks[i+1]
-				err = ffmpegCutChunk(context, chunk, *yPtr)
+				err = ffmpegCutChunk(context, chunk)
 				if err != nil {
 					fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
 				}
@@ -717,7 +719,7 @@ func finalSubcommand(args []string) bool {
 		}
 	} else {
 		for _, chunk := range context.chunks {
-			err := ffmpegCutChunk(context, chunk, *yPtr)
+			err := ffmpegCutChunk(context, chunk)
 			if err != nil {
 				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
 			}
@@ -732,7 +734,7 @@ func finalSubcommand(args []string) bool {
 	}
 
 	outputPath := "output.mp4"
-	err = ffmpegConcatChunks(listPath, outputPath, *yPtr)
+	err = ffmpegConcatChunks(listPath, outputPath)
 	if err != nil {
 		fmt.Printf("ERROR: Could not generated final output %s: %s\n", outputPath, err)
 		return false
@@ -746,7 +748,6 @@ func finalSubcommand(args []string) bool {
 func cutSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("cut", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
-	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
 	err := subFlag.Parse(args)
 	if err == flag.ErrHelp {
@@ -794,7 +795,7 @@ func cutSubcommand(args []string) bool {
 		}
 
 		for _, chunk := range cutChunks {
-			err := ffmpegCutChunk(context, chunk, *yPtr)
+			err := ffmpegCutChunk(context, chunk)
 			if err != nil {
 				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
 			}
@@ -809,7 +810,7 @@ func cutSubcommand(args []string) bool {
 		}
 
 		cutOutputPath := fmt.Sprintf("cut-%02d.mp4", cut.chunk)
-		err = ffmpegConcatChunks(listPath, cutOutputPath, *yPtr)
+		err = ffmpegConcatChunks(listPath, cutOutputPath)
 		if err != nil {
 			fmt.Printf("ERROR: Could not generate cut output file %s: %s\n", cutOutputPath, err)
 			return false
@@ -857,7 +858,6 @@ func chunkSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("chunk", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
 	chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
-	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
 	err := subFlag.Parse(args)
 
@@ -888,7 +888,7 @@ func chunkSubcommand(args []string) bool {
 
 	chunk := context.chunks[*chunkPtr]
 
-	err = ffmpegCutChunk(context, chunk, *yPtr)
+	err = ffmpegCutChunk(context, chunk)
 	if err != nil {
 		fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
 		return false
@@ -985,7 +985,6 @@ func pruneSubcommand(args []string) bool {
 func watchSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("watch", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
-	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
 
 	err := subFlag.Parse(args)
 
@@ -1023,7 +1022,7 @@ func watchSubcommand(args []string) bool {
 			}
 
 			if _, err := os.Stat(chunk.Name()); errors.Is(err, os.ErrNotExist) {
-				err = ffmpegCutChunk(context, chunk, *yPtr)
+				err = ffmpegCutChunk(context, chunk)
 				if err != nil {
 					fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
 					return false
@@ -1054,7 +1053,7 @@ func watchSubcommand(args []string) bool {
 	}
 
 	outputPath := "output.mp4"
-	err = ffmpegConcatChunks(listPath, outputPath, *yPtr)
+	err = ffmpegConcatChunks(listPath, outputPath)
 	if err != nil {
 		fmt.Printf("ERROR: Could not generated final output %s: %s\n", outputPath, err)
 		return false
