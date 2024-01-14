@@ -518,7 +518,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 
 	if len(chapStack) > 0 {
 		ok = false;
-		for i := range argsStack {
+		for i := range chapStack {
 			fmt.Printf("%s: ERROR: unused chapter\n", chapStack[i].Loc)
 		}
 	}
