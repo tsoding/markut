@@ -986,6 +986,7 @@ func pruneSubcommand(args []string) bool {
 func watchSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("watch", flag.ContinueOnError)
 	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+	skipcatPtr := subFlag.Bool("skipcat", false, "Skip concatenation step")
 
 	err := subFlag.Parse(args)
 
@@ -1046,18 +1047,21 @@ func watchSubcommand(args []string) bool {
 		return false
 	}
 
-	listPath := "final-list.txt"
-	err = ffmpegGenerateConcatList(context.chunks, listPath)
-	if err != nil {
-		fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
-		return false;
-	}
+	if !*skipcatPtr {
 
-	outputPath := "output.mp4"
-	err = ffmpegConcatChunks(listPath, outputPath)
-	if err != nil {
-		fmt.Printf("ERROR: Could not generated final output %s: %s\n", outputPath, err)
-		return false
+		listPath := "final-list.txt"
+		err = ffmpegGenerateConcatList(context.chunks, listPath)
+		if err != nil {
+			fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
+			return false;
+		}
+
+		outputPath := "output.mp4"
+		err = ffmpegConcatChunks(listPath, outputPath)
+		if err != nil {
+			fmt.Printf("ERROR: Could not generated final output %s: %s\n", outputPath, err)
+			return false
+		}
 	}
 
 	context.PrintSummary()
