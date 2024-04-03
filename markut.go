@@ -207,7 +207,7 @@ func loadTwitchChatDownloaderCSV(path string) ([]ChatMessage, error) {
 	for i := range records {
 		secs, err := strconv.Atoi(records[i][0])
 		if err != nil {
-			return chatLog, fmt.Errorf("%s:%d: invalid timestamp: %w", err)
+			return chatLog, fmt.Errorf("%s:%d: invalid timestamp: %w", path, i, err)
 		}
 		chatLog = append(chatLog, ChatMessage{
 			TimeOffset: Millis(secs*1000),
@@ -218,6 +218,49 @@ func loadTwitchChatDownloaderCSV(path string) ([]ChatMessage, error) {
 	sort.Slice(chatLog, func(i, j int) bool {
 		return chatLog[i].TimeOffset < chatLog[i].TimeOffset
 	})
+	return chatLog, nil
+}
+
+func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, error) {
+	chatLog := []ChatMessage{}
+	f, err := os.Open(path);
+	if err != nil {
+		return chatLog, err
+	}
+	bytes, err := ioutil.ReadAll(f)
+	if err != nil {
+		return chatLog, err
+	}
+
+	content := string(bytes)
+	for i, line := range strings.Split(content, "\n") {
+		pair := strings.SplitN(line, ",", 2)
+		secs, err := strconv.Atoi(pair[0])
+		if err != nil {
+			return chatLog, fmt.Errorf("%s:%d: invalid timestamp: %w", path, i, err)
+		}
+
+		pair = strings.SplitN(pair[1], ",", 2)
+		nickname := pair[0]
+
+		pair = strings.SplitN(pair[1], ",", 2)
+		text := pair[1]
+
+		if len(text) >= 2 && text[0] == '"' && text[len(text)-1] == '"' {
+			text = text[1:len(text)-1]
+		}
+
+		chatLog = append(chatLog, ChatMessage{
+			TimeOffset: Millis(secs*1000),
+			Nickname: nickname,
+			Text: text,
+		})
+	}
+
+	sort.Slice(chatLog, func(i, j int) bool {
+		return chatLog[i].TimeOffset < chatLog[i].TimeOffset
+	})
+
 	return chatLog, nil
 }
 
