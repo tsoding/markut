@@ -10,6 +10,9 @@ import (
 	"errors"
 	"time"
 	"io/ioutil"
+	"encoding/csv"
+	"strconv"
+	"sort"
 )
 
 func millisToTs(millis Millis) string {
@@ -25,11 +28,31 @@ func millisToTs(millis Millis) string {
 	return fmt.Sprintf("%s%02d:%02d:%02d.%03d", sign, hh, mm, ss, ms)
 }
 
+func millisToSubRipTs(millis Millis) string {
+	sign := ""
+	if millis < 0 {
+		sign = "-"
+		millis = -millis
+	}
+	hh := millis / 1000 / 60 / 60
+	mm := millis / 1000 / 60 % 60
+	ss := millis / 1000 % 60
+	ms := millis % 1000
+	return fmt.Sprintf("%s%02d:%02d:%02d,%03d", sign, hh, mm, ss, ms)
+}
+
+type ChatMessage struct {
+	TimeOffset Millis
+	Nickname string
+	Text string
+}
+
 type Chunk struct {
 	Start Millis
 	End   Millis
 	Loc Loc
 	InputPath string
+	ChatLog []ChatMessage
 	Blur bool
 	Unfinished bool
 }
@@ -94,6 +117,8 @@ type Cut struct {
 
 type EvalContext struct {
 	inputPath string
+	outputPath string
+	chatLog []ChatMessage
 	chunks []Chunk
 	chapters []Chapter
 	cuts []Cut
@@ -147,12 +172,62 @@ func (context EvalContext) containsChunkWithName(filePath string) bool {
 	return false
 }
 
+// IMPORTANT! chatLog is assumed to be sorted by TimeOffset.
+func sliceChatLog(chatLog []ChatMessage, start, end Millis) []ChatMessage {
+	// TODO: use Binary Search for a speed up on big chat logs
+	lower := 0
+	for lower < len(chatLog) && chatLog[lower].TimeOffset < start {
+		lower += 1
+	}
+	upper := lower;
+	for upper < len(chatLog) && chatLog[upper].TimeOffset <= end {
+		upper += 1
+	}
+	if lower < len(chatLog) {
+		return chatLog[lower:upper]
+	}
+	return []ChatMessage{}
+}
+
+// This function is compatible with the format https://www.twitchchatdownloader.com/ generates
+func loadTwitchChatDownloaderCSV(path string) ([]ChatMessage, error) {
+	chatLog := []ChatMessage{}
+	f, err := os.Open(path);
+	if err != nil {
+		return chatLog, err
+	}
+	defer f.Close()
+	r := csv.NewReader(f)
+	r.Comma = ','
+	r.LazyQuotes = true
+	records, err := r.ReadAll()
+	if err != nil {
+		return chatLog, err
+	}
+	for i := range records {
+		secs, err := strconv.Atoi(records[i][0])
+		if err != nil {
+			return chatLog, fmt.Errorf("%s:%d: invalid timestamp: %w", err)
+		}
+		chatLog = append(chatLog, ChatMessage{
+			TimeOffset: Millis(secs*1000),
+			Nickname: records[i][1],
+			Text: records[i][3],
+		})
+	}
+	sort.Slice(chatLog, func(i, j int) bool {
+		return chatLog[i].TimeOffset < chatLog[i].TimeOffset
+	})
+	return chatLog, nil
+}
+
 func evalMarkutFile(path string) (context EvalContext, ok bool) {
 	// Default chunk transcoding parameters
 	context.VideoCodec = "libx264"
 	context.VideoBitrate = "4000k"
 	context.AudioCodec = "aac"
 	context.AudioBitrate = "300k"
+	context.outputPath = "output.mp4"
 
 	ok = true
 	content, err := ioutil.ReadFile(path)
@@ -260,6 +335,23 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 				outFlag := args[0]
 				context.ExtraOutFlags = append(context.ExtraOutFlags, string(outFlag.Text))
+			case "chat":
+				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
+					return
+				}
+				path := args[0]
+				context.chatLog, err = loadTwitchChatDownloaderCSV(string(path.Text))
+				if err != nil {
+					fmt.Printf("%s: ERROR: could not load the chat logs: %s\n", path.Loc, err)
+					ok = false
+					return
+				}
+			case "no_chat":
+				context.chatLog = []ChatMessage{}
 			case "input":
 				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
 				if err != nil {
@@ -464,6 +556,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					Start: start.Timestamp,
 					End: end.Timestamp,
 					InputPath: context.inputPath,
+					ChatLog: sliceChatLog(context.chatLog, start.Timestamp, end.Timestamp),
 				}
 
 				context.chunks = append(context.chunks, chunk)
@@ -734,10 +827,9 @@ func finalSubcommand(args []string) bool {
 		return false;
 	}
 
-	outputPath := "output.mp4"
-	err = ffmpegConcatChunks(listPath, outputPath)
+	err = ffmpegConcatChunks(listPath, context.outputPath)
 	if err != nil {
-		fmt.Printf("ERROR: Could not generated final output %s: %s\n", outputPath, err)
+		fmt.Printf("ERROR: Could not generated final output %s: %s\n", context.outputPath, err)
 		return false
 	}
 
@@ -851,6 +943,66 @@ func summarySubcommand(args []string) bool {
 	}
 
 	context.PrintSummary()
+
+	return true
+}
+
+func captionsRingPush(ring []ChatMessage, message ChatMessage, capacity int) []ChatMessage {
+	if len(ring) < capacity {
+		return append(ring, message)
+	}
+	return append(ring[1:], message)
+}
+
+func chatSubcommand(args []string) bool {
+	chatFlag := flag.NewFlagSet("chat", flag.ContinueOnError)
+	markutPtr := chatFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+
+	err := chatFlag.Parse(args)
+
+	if err == flag.ErrHelp {
+		return true
+	}
+
+	if err != nil {
+		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+		return false
+	}
+
+	if *markutPtr == "" {
+		chatFlag.Usage()
+		fmt.Printf("ERROR: No -markut file is provided\n");
+		return false
+	}
+
+	context, ok := evalMarkutFile(*markutPtr)
+	if !ok {
+		return false
+	}
+
+	capacity := 1
+	ring := []ChatMessage{}
+	timeCursor := Millis(0)
+	subRipCounter := 0;
+	for _, chunk := range context.chunks {
+		prevTime := chunk.Start
+		for _, message := range chunk.ChatLog {
+			deltaTime := message.TimeOffset - prevTime
+			prevTime = message.TimeOffset
+			if len(ring) > 0 {
+				subRipCounter += 1
+				fmt.Printf("%d\n", subRipCounter);
+				fmt.Printf("%s --> %s\n", millisToSubRipTs(timeCursor), millisToSubRipTs(timeCursor + deltaTime));
+				for _, ringMessage := range ring {
+					fmt.Printf("[%s] %s\n", ringMessage.Nickname, ringMessage.Text)
+				}
+				fmt.Printf("\n")
+			}
+			timeCursor += deltaTime
+			ring = captionsRingPush(ring, message, capacity);
+		}
+		timeCursor += chunk.End - prevTime
+	}
 
 	return true
 }
@@ -1056,10 +1208,9 @@ func watchSubcommand(args []string) bool {
 			return false;
 		}
 
-		outputPath := "output.mp4"
-		err = ffmpegConcatChunks(listPath, outputPath)
+		err = ffmpegConcatChunks(listPath, context.outputPath)
 		if err != nil {
-			fmt.Printf("ERROR: Could not generated final output %s: %s\n", outputPath, err)
+			fmt.Printf("ERROR: Could not generated final output %s: %s\n", context.outputPath, err)
 			return false
 		}
 	}
@@ -1100,6 +1251,11 @@ var Subcommands = []Subcommand{
 		Name: "summary",
 		Run: summarySubcommand,
 		Description: "Print the summary of the video",
+	},
+	{
+		Name: "chat",
+		Run: chatSubcommand,
+		Description: "Generation chat captions",
 	},
 	{
 		Name: "prune",
