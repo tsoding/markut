@@ -43,7 +43,6 @@ func millisToSubRipTs(millis Millis) string {
 
 type ChatMessage struct {
 	TimeOffset Millis
-	Nickname string
 	Text string
 }
 
@@ -189,6 +188,19 @@ func sliceChatLog(chatLog []ChatMessage, start, end Millis) []ChatMessage {
 	return []ChatMessage{}
 }
 
+// IMPORTANT! chatLog is assumed to be sorted by TimeOffset.
+func compressChatLog(chatLog []ChatMessage) []ChatMessage {
+	result := []ChatMessage{}
+	for i := range chatLog {
+		if len(result) > 0 && result[len(result)-1].TimeOffset == chatLog[i].TimeOffset {
+			result[len(result)-1].Text = result[len(result)-1].Text + "\n" + chatLog[i].Text
+		} else {
+			result = append(result, chatLog[i])
+		}
+	}
+	return result
+}
+
 // This function is compatible with the format https://www.twitchchatdownloader.com/ generates
 func loadTwitchChatDownloaderCSV(path string) ([]ChatMessage, error) {
 	chatLog := []ChatMessage{}
@@ -209,16 +221,17 @@ func loadTwitchChatDownloaderCSV(path string) ([]ChatMessage, error) {
 		if err != nil {
 			return chatLog, fmt.Errorf("%s:%d: invalid timestamp: %w", path, i, err)
 		}
+		nickname := records[i][1]
+		text := records[i][3]
 		chatLog = append(chatLog, ChatMessage{
 			TimeOffset: Millis(secs*1000),
-			Nickname: records[i][1],
-			Text: records[i][3],
+			Text: fmt.Sprintf("[%s] %s", nickname, text),
 		})
 	}
 	sort.Slice(chatLog, func(i, j int) bool {
 		return chatLog[i].TimeOffset < chatLog[i].TimeOffset
 	})
-	return chatLog, nil
+	return compressChatLog(chatLog), nil
 }
 
 func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, error) {
@@ -252,8 +265,7 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, er
 
 		chatLog = append(chatLog, ChatMessage{
 			TimeOffset: Millis(secs*1000),
-			Nickname: nickname,
-			Text: text,
+			Text: fmt.Sprintf("[%s] %s", nickname, text),
 		})
 	}
 
@@ -261,7 +273,7 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, er
 		return chatLog[i].TimeOffset < chatLog[i].TimeOffset
 	})
 
-	return chatLog, nil
+	return compressChatLog(chatLog), nil
 }
 
 func evalMarkutFile(path string) (context EvalContext, ok bool) {
@@ -1037,7 +1049,7 @@ func chatSubcommand(args []string) bool {
 				fmt.Printf("%d\n", subRipCounter);
 				fmt.Printf("%s --> %s\n", millisToSubRipTs(timeCursor), millisToSubRipTs(timeCursor + deltaTime));
 				for _, ringMessage := range ring {
-					fmt.Printf("[%s] %s\n", ringMessage.Nickname, ringMessage.Text)
+					fmt.Printf("%s\n", ringMessage.Text);
 				}
 				fmt.Printf("\n")
 			}
