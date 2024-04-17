@@ -10,7 +10,6 @@ import (
 	"errors"
 	"time"
 	"io/ioutil"
-	"encoding/csv"
 	"strconv"
 	"sort"
 )
@@ -201,39 +200,8 @@ func compressChatLog(chatLog []ChatMessage) []ChatMessage {
 	return result
 }
 
-// This function is compatible with the format https://www.twitchchatdownloader.com/ generates
-func loadTwitchChatDownloaderCSV(path string) ([]ChatMessage, error) {
-	chatLog := []ChatMessage{}
-	f, err := os.Open(path);
-	if err != nil {
-		return chatLog, err
-	}
-	defer f.Close()
-	r := csv.NewReader(f)
-	r.Comma = ','
-	r.LazyQuotes = true
-	records, err := r.ReadAll()
-	if err != nil {
-		return chatLog, err
-	}
-	for i := range records {
-		secs, err := strconv.Atoi(records[i][0])
-		if err != nil {
-			return chatLog, fmt.Errorf("%s:%d: invalid timestamp: %w", path, i, err)
-		}
-		nickname := records[i][1]
-		text := records[i][3]
-		chatLog = append(chatLog, ChatMessage{
-			TimeOffset: Millis(secs*1000),
-			Text: fmt.Sprintf("[%s] %s", nickname, text),
-		})
-	}
-	sort.Slice(chatLog, func(i, j int) bool {
-		return chatLog[i].TimeOffset < chatLog[i].TimeOffset
-	})
-	return compressChatLog(chatLog), nil
-}
-
+// This function is compatible with the format https://www.twitchchatdownloader.com/ generates.
+// It does not use encoding/csv because that website somehow generates unparsable garbage.
 func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, error) {
 	chatLog := []ChatMessage{}
 	f, err := os.Open(path);
@@ -247,6 +215,9 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, er
 
 	content := string(bytes)
 	for i, line := range strings.Split(content, "\n") {
+		if len(line) == 0 {
+			break
+		}
 		pair := strings.SplitN(line, ",", 2)
 		secs, err := strconv.Atoi(pair[0])
 		if err != nil {
@@ -399,7 +370,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					return
 				}
 				path := args[0]
-				context.chatLog, err = loadTwitchChatDownloaderCSV(string(path.Text))
+				context.chatLog, err = loadTwitchChatDownloaderCSVButParseManually(string(path.Text))
 				if err != nil {
 					fmt.Printf("%s: ERROR: could not load the chat logs: %s\n", path.Loc, err)
 					ok = false
