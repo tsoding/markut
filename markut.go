@@ -241,7 +241,7 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, er
 	}
 
 	sort.Slice(chatLog, func(i, j int) bool {
-		return chatLog[i].TimeOffset < chatLog[i].TimeOffset
+		return chatLog[i].TimeOffset < chatLog[j].TimeOffset
 	})
 
 	return compressChatLog(chatLog), nil
