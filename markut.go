@@ -674,8 +674,6 @@ func millisToSecsForFFmpeg(millis Millis) string {
 }
 
 func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
-	// TODO: Maybe we should remove this check? We already pass -n to
-	// ffmpeg down there...
 	_, err := os.Stat(chunk.Name())
 	if err == nil {
 		fmt.Printf("INFO: %s is already rendered\n", chunk.Name());
@@ -694,9 +692,13 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
 	ffmpeg := ffmpegPathToBin()
 	args := []string{}
 
-	// Rendering chunks is expensive. So if the chunk already exists,
-	// we do not rerender it.
-	args = append(args, "-n");
+	// We always rerender unfinished-chunk.mp4, because it might still
+	// exist due to the rendering erroring out or canceling. It's a
+	// temporary file that is copied and renamed to the chunks/ folder
+	// after the rendering has finished successfully. The successfully
+	// rendered chunks are not being rerendered due to the check at
+	// the beginning of the function.
+	args = append(args, "-y");
 
 	args = append(args, "-ss", millisToSecsForFFmpeg(chunk.Start))
 	args = append(args, "-i", chunk.InputPath)
