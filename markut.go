@@ -122,12 +122,25 @@ type EvalContext struct {
 	cuts []Cut
 	modified_cuts []int
 
+	argsStack []Token
+	chapStack []Chapter
+
 	VideoCodec string
 	VideoBitrate string
 	AudioCodec string
 	AudioBitrate string
 
 	ExtraOutFlags []string
+}
+
+func defaultContext() (context EvalContext) {
+	// Default chunk transcoding parameters
+	context.VideoCodec = "libx264"
+	context.VideoBitrate = "4000k"
+	context.AudioCodec = "aac"
+	context.AudioBitrate = "300k"
+	context.outputPath = "output.mp4"
+	return
 }
 
 func (context EvalContext) PrintSummary() {
@@ -247,14 +260,7 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, er
 	return compressChatLog(chatLog), nil
 }
 
-func evalMarkutFile(path string) (context EvalContext, ok bool) {
-	// Default chunk transcoding parameters
-	context.VideoCodec = "libx264"
-	context.VideoBitrate = "4000k"
-	context.AudioCodec = "aac"
-	context.AudioBitrate = "300k"
-	context.outputPath = "output.mp4"
-
+func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 	ok = true
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -265,8 +271,6 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 
 	lexer := NewLexer(string(content), path)
 	token := Token{}
-	argsStack := []Token{}
-	chapStack := []Chapter{}
 	var chapOffset Millis = 0
 	for {
 		token, err = lexer.Next()
@@ -283,27 +287,27 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 		var args []Token
 		switch token.Kind {
 		case TokenDash:
-			args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp, TokenTimestamp)
+			args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenTimestamp, TokenTimestamp)
 			if err != nil {
 				fmt.Printf("%s: ERROR: type check failed for subtraction\n", token.Loc)
 				fmt.Printf("%s\n", err);
 				ok = false
 				return
 			}
-			argsStack = append(argsStack, Token{
+			context.argsStack = append(context.argsStack, Token{
 				Loc: token.Loc,
 				Kind: TokenTimestamp,
 				Timestamp: args[1].Timestamp - args[0].Timestamp,
 			})
 		case TokenPlus:
-			args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp, TokenTimestamp)
+			args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenTimestamp, TokenTimestamp)
 			if err != nil {
 				fmt.Printf("%s: ERROR: type check failed for addition\n", token.Loc)
 				fmt.Printf("%s\n", err);
 				ok = false
 				return
 			}
-			argsStack = append(argsStack, Token{
+			context.argsStack = append(context.argsStack, Token{
 				Loc: token.Loc,
 				Kind: TokenTimestamp,
 				Timestamp: args[1].Timestamp + args[0].Timestamp,
@@ -311,12 +315,12 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 		case TokenString:
 			fallthrough
 		case TokenTimestamp:
-			argsStack = append(argsStack, token)
+			context.argsStack = append(context.argsStack, token)
 		case TokenSymbol:
 			command := string(token.Text)
 			switch command {
 			case "video_codec":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -325,7 +329,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 				context.VideoCodec = string(args[0].Text)
 			case "video_bitrate":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -334,7 +338,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 				context.VideoBitrate = string(args[0].Text)
 			case "audio_codec":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -343,7 +347,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 				context.AudioCodec = string(args[0].Text)
 			case "audio_bitrate":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -352,7 +356,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 				context.AudioBitrate = string(args[0].Text)
 			case "of":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -362,7 +366,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				outFlag := args[0]
 				context.ExtraOutFlags = append(context.ExtraOutFlags, string(outFlag.Text))
 			case "chat":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -378,8 +382,20 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 			case "no_chat":
 				context.chatLog = []ChatMessage{}
+			case "include":
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					ok = false
+					return
+				}
+				path := args[0]
+				if !context.evalMarkutFile(string(path.Text)) {
+					return false
+				}
 			case "input":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -395,41 +411,41 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				context.inputPath = string(path.Text)
 			case "over":
 				arity := 2
-				if len(argsStack) < arity {
+				if len(context.argsStack) < arity {
 					err = &DiagErr{
 						Loc: token.Loc,
-						Err: fmt.Errorf("Expected %d arguments but got %d", arity, len(argsStack)),
+						Err: fmt.Errorf("Expected %d arguments but got %d", arity, len(context.argsStack)),
 					}
 				}
-				n := len(argsStack)
-				argsStack = append(argsStack, argsStack[n-2]);
+				n := len(context.argsStack)
+				context.argsStack = append(context.argsStack, context.argsStack[n-2]);
 			case "dup":
 				arity := 1
-				if len(argsStack) < arity {
+				if len(context.argsStack) < arity {
 					err = &DiagErr{
 						Loc: token.Loc,
-						Err: fmt.Errorf("Expected %d arguments but got %d", arity, len(argsStack)),
+						Err: fmt.Errorf("Expected %d arguments but got %d", arity, len(context.argsStack)),
 					}
 					return
 				}
-				n := len(argsStack)
+				n := len(context.argsStack)
 				// TODO: the location of the dupped value should be the location of the "dup" token
-				argsStack = append(argsStack, argsStack[n-1])
+				context.argsStack = append(context.argsStack, context.argsStack[n-1])
 			case "chapter":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString, TokenTimestamp)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
 					ok = false
 					return
 				}
-				chapStack = append(chapStack, Chapter{
+				context.chapStack = append(context.chapStack, Chapter{
 					Loc: args[1].Loc,
 					Label: string(args[0].Text),
 					Timestamp: args[1].Timestamp,
 				})
 			case "puts":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenString)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -438,7 +454,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 				fmt.Printf("%s", string(args[0].Text));
 			case "putd":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -447,7 +463,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 				fmt.Printf("%d", int(args[0].Timestamp));
 			case "putt":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -456,7 +472,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 				fmt.Printf("%s", millisToTs(args[0].Timestamp));
 			case "here":
-				argsStack = append(argsStack, Token{
+				context.argsStack = append(context.argsStack, Token{
 					Loc: token.Loc,
 					Kind: TokenString,
 					Text: []rune(token.Loc.String()),
@@ -469,7 +485,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					return
 				}
 
-				argsStack = append(argsStack, Token{
+				context.argsStack = append(context.argsStack, Token{
 					Loc: token.Loc,
 					Kind: TokenString,
 					Text: []rune(context.chunks[n-1].Loc.String()),
@@ -482,7 +498,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					return
 				}
 
-				argsStack = append(argsStack, Token{
+				context.argsStack = append(context.argsStack, Token{
 					Loc: token.Loc,
 					Kind: TokenTimestamp,
 					Timestamp: Millis(n-1),
@@ -495,7 +511,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					return
 				}
 
-				argsStack = append(argsStack, Token{
+				context.argsStack = append(context.argsStack, Token{
 					Loc: token.Loc,
 					Kind: TokenTimestamp,
 					Timestamp: context.chunks[n-1].Duration(),
@@ -529,7 +545,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 				}
 				context.chunks[len(context.chunks)-1].Unfinished = true
 			case "cut":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -547,7 +563,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 					pad: pad.Timestamp,
 				})
 			case "chunk":
-				args, err, argsStack = typeCheckArgs(token.Loc, argsStack, TokenTimestamp, TokenTimestamp)
+				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenTimestamp, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -587,7 +603,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 
 				context.chunks = append(context.chunks, chunk)
 
-				for _, chapter := range chapStack {
+				for _, chapter := range context.chapStack {
 					if chapter.Timestamp < chunk.Start || chunk.End < chapter.Timestamp {
 						fmt.Printf("%s: ERROR: the timestamp %s of chapter \"%s\" is outside of the the current chunk\n", chapter.Loc, millisToTs(chapter.Timestamp), chapter.Label)
 						fmt.Printf("%s: NOTE: which starts at %s\n", start.Loc, millisToTs(start.Timestamp))
@@ -605,7 +621,7 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 
 				chapOffset += chunk.End - chunk.Start
 
-				chapStack = []Chapter{}
+				context.chapStack = []Chapter{}
 			default:
 				fmt.Printf("%s: ERROR: Unknown command %s\n", token.Loc, command)
 				ok = false
@@ -618,6 +634,11 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 		}
 	}
 
+	return
+}
+
+func (context *EvalContext) finishEval() (ok bool) {
+	ok = true
 	for i := 0; i + 1 < len(context.chapters); i += 1 {
 		duration := context.chapters[i + 1].Timestamp - context.chapters[i].Timestamp;
 		// TODO: angled brackets are not allowed on YouTube. Let's make `chapters` check for that too.
@@ -629,20 +650,19 @@ func evalMarkutFile(path string) (context EvalContext, ok bool) {
 		}
 	}
 
-	if len(argsStack) > 0 {
+	if len(context.argsStack) > 0 {
 		ok = false;
-		for i := range argsStack {
-			fmt.Printf("%s: ERROR: unused argument\n", argsStack[i].Loc)
+		for i := range context.argsStack {
+			fmt.Printf("%s: ERROR: unused argument\n", context.argsStack[i].Loc)
 		}
 	}
 
-	if len(chapStack) > 0 {
+	if len(context.chapStack) > 0 {
 		ok = false;
-		for i := range chapStack {
-			fmt.Printf("%s: ERROR: unused chapter\n", chapStack[i].Loc)
+		for i := range context.chapStack {
+			fmt.Printf("%s: ERROR: unused chapter\n", context.chapStack[i].Loc)
 		}
 	}
-
 	return
 }
 
@@ -818,7 +838,8 @@ func finalSubcommand(args []string) bool {
 	}
 
 
-	context, ok := evalMarkutFile(*markutPtr)
+	context := defaultContext()
+	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
 	if !ok {
 		return false
 	}
@@ -885,7 +906,8 @@ func cutSubcommand(args []string) bool {
 		return false
 	}
 
-	context, ok := evalMarkutFile(*markutPtr)
+	context := defaultContext()
+	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
 	if !ok {
 		return false
 	}
@@ -964,7 +986,8 @@ func summarySubcommand(args []string) bool {
 		return false
 	}
 
-	context, ok := evalMarkutFile(*markutPtr)
+	context := defaultContext();
+	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
 	if !ok {
 		return false
 	}
@@ -1002,7 +1025,8 @@ func chatSubcommand(args []string) bool {
 		return false
 	}
 
-	context, ok := evalMarkutFile(*markutPtr)
+	context := defaultContext()
+	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
 	if !ok {
 		return false
 	}
@@ -1056,7 +1080,8 @@ func chunkSubcommand(args []string) bool {
 		return false
 	}
 
-	context, ok := evalMarkutFile(*markutPtr)
+	context := defaultContext();
+	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
 	if !ok {
 		return false
 	}
@@ -1131,7 +1156,8 @@ func pruneSubcommand(args []string) bool {
 		return false
 	}
 
-	context, ok := evalMarkutFile(*markutPtr)
+	context := defaultContext();
+	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
 	if !ok {
 		return false
 	}
@@ -1190,7 +1216,8 @@ func watchSubcommand(args []string) bool {
 		// This kind of crappy modification checking needs at least some sort of atomicity.
 		// rsync(1) is as atomic as rename(2). So it's alright for majority of the cases.
 
-		context, ok := evalMarkutFile(*markutPtr)
+		context := defaultContext();
+		ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
 		if !ok {
 			return false
 		}
@@ -1221,7 +1248,8 @@ func watchSubcommand(args []string) bool {
 		time.Sleep(1 * time.Second)
 	}
 
-	context, ok := evalMarkutFile(*markutPtr)
+	context := defaultContext()
+	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
 	if !ok {
 		return false
 	}
