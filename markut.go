@@ -635,33 +635,28 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 	return
 }
 
-func (context *EvalContext) finishEval() (ok bool) {
-	ok = true
+func (context *EvalContext) finishEval() bool {
 	for i := 0; i + 1 < len(context.chapters); i += 1 {
 		duration := context.chapters[i + 1].Timestamp - context.chapters[i].Timestamp;
 		// TODO: angled brackets are not allowed on YouTube. Let's make `chapters` check for that too.
 		if duration < MinYouTubeChapterDuration {
 			fmt.Printf("%s: ERROR: the chapter \"%s\" has duration %s which is shorter than the minimal allowed YouTube chapter duration which is %s (See https://support.google.com/youtube/answer/9884579)\n", context.chapters[i].Loc, context.chapters[i].Label, millisToTs(duration), millisToTs(MinYouTubeChapterDuration));
 			fmt.Printf("%s: NOTE: the chapter ends here\n", context.chapters[i + 1].Loc);
-			ok = false;
-			return;
+			return false;
 		}
 	}
 
-	if len(context.argsStack) > 0 {
-		ok = false;
+	if len(context.argsStack) > 0 || len(context.chapStack) > 0 {
 		for i := range context.argsStack {
 			fmt.Printf("%s: ERROR: unused argument\n", context.argsStack[i].Loc)
 		}
-	}
-
-	if len(context.chapStack) > 0 {
-		ok = false;
 		for i := range context.chapStack {
 			fmt.Printf("%s: ERROR: unused chapter\n", context.chapStack[i].Loc)
 		}
+		return false
 	}
-	return
+
+	return true
 }
 
 func ffmpegPathToBin() (ffmpegPath string) {
