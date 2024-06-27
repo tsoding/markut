@@ -80,19 +80,19 @@ type Chapter struct {
 
 const MinYouTubeChapterDuration Millis = 10*1000;
 
-func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []Token, err error, nextStack []Token) {
-	if len(argsStack) < len(signature) {
+func (context *EvalContext) typeCheckArgs(loc Loc, signature ...TokenKind) (args []Token, err error) {
+	if len(context.argsStack) < len(signature) {
 		err = &DiagErr{
 			Loc: loc,
-			Err: fmt.Errorf("Expected %d arguments but got %d", len(signature), len(argsStack)),
+			Err: fmt.Errorf("Expected %d arguments but got %d", len(signature), len(context.argsStack)),
 		}
 		return
 	}
 
 	for _, kind := range signature {
-		n := len(argsStack)
-		arg := argsStack[n-1]
-		argsStack = argsStack[:n-1]
+		n := len(context.argsStack)
+		arg := context.argsStack[n-1]
+		context.argsStack = context.argsStack[:n-1]
 		if kind != arg.Kind {
 			err = &DiagErr{
 				Loc: arg.Loc,
@@ -102,8 +102,6 @@ func typeCheckArgs(loc Loc, argsStack []Token, signature ...TokenKind) (args []T
 		}
 		args = append(args, arg)
 	}
-
-	nextStack = argsStack
 
 	return
 }
@@ -287,7 +285,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 		var args []Token
 		switch token.Kind {
 		case TokenDash:
-			args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenTimestamp, TokenTimestamp)
+			args, err = context.typeCheckArgs(token.Loc, TokenTimestamp, TokenTimestamp)
 			if err != nil {
 				fmt.Printf("%s: ERROR: type check failed for subtraction\n", token.Loc)
 				fmt.Printf("%s\n", err);
@@ -300,7 +298,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 				Timestamp: args[1].Timestamp - args[0].Timestamp,
 			})
 		case TokenPlus:
-			args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenTimestamp, TokenTimestamp)
+			args, err = context.typeCheckArgs(token.Loc, TokenTimestamp, TokenTimestamp)
 			if err != nil {
 				fmt.Printf("%s: ERROR: type check failed for addition\n", token.Loc)
 				fmt.Printf("%s\n", err);
@@ -320,7 +318,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 			command := string(token.Text)
 			switch command {
 			case "video_codec":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
+				args, err = context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -329,7 +327,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 				}
 				context.VideoCodec = string(args[0].Text)
 			case "video_bitrate":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
+				args, err = context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -338,7 +336,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 				}
 				context.VideoBitrate = string(args[0].Text)
 			case "audio_codec":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
+				args, err = context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -347,7 +345,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 				}
 				context.AudioCodec = string(args[0].Text)
 			case "audio_bitrate":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
+				args, err = context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -356,7 +354,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 				}
 				context.AudioBitrate = string(args[0].Text)
 			case "of":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
+				args, err = context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -366,7 +364,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 				outFlag := args[0]
 				context.ExtraOutFlags = append(context.ExtraOutFlags, string(outFlag.Text))
 			case "chat":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
+				args, err = context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -383,7 +381,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 			case "no_chat":
 				context.chatLog = []ChatMessage{}
 			case "include":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
+				args, err = context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -395,7 +393,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 					return false
 				}
 			case "input":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
+				args, err = context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -432,7 +430,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 				// TODO: the location of the dupped value should be the location of the "dup" token
 				context.argsStack = append(context.argsStack, context.argsStack[n-1])
 			case "chapter":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString, TokenTimestamp)
+				args, err = context.typeCheckArgs(token.Loc, TokenString, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -445,7 +443,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 					Timestamp: args[1].Timestamp,
 				})
 			case "puts":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenString)
+				args, err = context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -454,7 +452,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 				}
 				fmt.Printf("%s", string(args[0].Text));
 			case "putd":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenTimestamp)
+				args, err = context.typeCheckArgs(token.Loc, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -463,7 +461,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 				}
 				fmt.Printf("%d", int(args[0].Timestamp));
 			case "putt":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenTimestamp)
+				args, err = context.typeCheckArgs(token.Loc, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -545,7 +543,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 				}
 				context.chunks[len(context.chunks)-1].Unfinished = true
 			case "cut":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenTimestamp)
+				args, err = context.typeCheckArgs(token.Loc, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -563,7 +561,7 @@ func (context *EvalContext) evalMarkutFile(path string) (ok bool) {
 					pad: pad.Timestamp,
 				})
 			case "chunk":
-				args, err, context.argsStack = typeCheckArgs(token.Loc, context.argsStack, TokenTimestamp, TokenTimestamp)
+				args, err = context.typeCheckArgs(token.Loc, TokenTimestamp, TokenTimestamp)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
