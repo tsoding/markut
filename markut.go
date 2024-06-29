@@ -122,6 +122,7 @@ type EvalContext struct {
 
 	argsStack []Token
 	chapStack []Chapter
+	chapOffset Millis
 
 	VideoCodec string
 	VideoBitrate string
@@ -267,7 +268,6 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 
 	lexer := NewLexer(string(content), path)
 	token := Token{}
-	var chapOffset Millis = 0
 	for {
 		token, err = lexer.Next()
 		if err != nil {
@@ -574,12 +574,12 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 
 					context.chapters = append(context.chapters, Chapter{
 						Loc: chapter.Loc,
-						Timestamp: chapter.Timestamp - chunk.Start + chapOffset,
+						Timestamp: chapter.Timestamp - chunk.Start + context.chapOffset,
 						Label: chapter.Label,
 					})
 				}
 
-				chapOffset += chunk.End - chunk.Start
+				context.chapOffset += chunk.End - chunk.Start
 
 				context.chapStack = []Chapter{}
 			default:
