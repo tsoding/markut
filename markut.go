@@ -1263,7 +1263,7 @@ var Subcommands = []Subcommand{
 	{
 		Name: "chat",
 		Run: chatSubcommand,
-		Description: "Generation chat captions",
+		Description: "Generate chat captions",
 	},
 	{
 		Name: "prune",
