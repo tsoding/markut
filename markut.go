@@ -353,6 +353,49 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 				}
 				outFlag := args[0]
 				context.ExtraOutFlags = append(context.ExtraOutFlags, string(outFlag.Text))
+			case "chat_offset":
+				if len(context.chunks) > 0  {
+					fmt.Printf("%s: ERROR: chat offset should be applied after `chat` commands but before any `chunks` commands. This is due to `chunk` commands making copies of the chat slices that are not affected by the consequent chat offsets\n", token.Loc);
+					return false;
+				}
+
+				args, err = context.typeCheckArgs(token.Loc, TokenTimestamp, TokenTimestamp)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					return false
+				}
+
+				start := args[1]
+				end := args[0]
+
+				if start.Timestamp < 0 {
+					fmt.Printf("%s: ERROR: the start of the chat offset is negative %s\n", start.Loc, millisToTs(start.Timestamp));
+					return false
+				}
+
+				if end.Timestamp < 0 {
+					fmt.Printf("%s: ERROR: the end of the chat offset is negative %s\n", end.Loc, millisToTs(end.Timestamp));
+					return false
+				}
+
+				if start.Timestamp > end.Timestamp {
+					fmt.Printf("%s: ERROR: the end of the chat offset %s is earlier than its start %s\n", end.Loc, millisToTs(end.Timestamp), millisToTs(start.Timestamp));
+					fmt.Printf("%s: NOTE: the start is located here\n", start.Loc);
+					return false
+				}
+
+				chatLen := len(context.chatLog)
+				if chatLen > 0 {
+					last := context.chatLog[chatLen-1].TimeOffset
+					before := sliceChatLog(context.chatLog, 0, start.Timestamp)
+					after := sliceChatLog(context.chatLog, end.Timestamp, last)
+					delta := end.Timestamp - start.Timestamp
+					for i := range after {
+						after[i].TimeOffset -= delta
+					}
+					context.chatLog = append(before, after...)
+				}
 			case "chat":
 				args, err = context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
