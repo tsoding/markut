@@ -815,7 +815,7 @@ func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) error {
 
 func finalSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
-	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+	markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 	patchPtr := subFlag.Bool("patch", false, "Patch modified cuts")
 
 	err := subFlag.Parse(args)
@@ -827,13 +827,6 @@ func finalSubcommand(args []string) bool {
 		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
 		return false
 	}
-
-	if *markutPtr == "" {
-		subFlag.Usage()
-		fmt.Printf("ERROR: No -markut file is provided\n")
-		return false
-	}
-
 
 	context := defaultContext()
 	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
@@ -885,7 +878,7 @@ func finalSubcommand(args []string) bool {
 
 func cutSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("cut", flag.ContinueOnError)
-	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+	markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 
 	err := subFlag.Parse(args)
 	if err == flag.ErrHelp {
@@ -894,12 +887,6 @@ func cutSubcommand(args []string) bool {
 
 	if err != nil {
 		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	if *markutPtr == "" {
-		subFlag.Usage()
-		fmt.Printf("ERROR: No -markut file is provided\n")
 		return false
 	}
 
@@ -964,7 +951,7 @@ func cutSubcommand(args []string) bool {
 
 func summarySubcommand(args []string) bool {
 	summFlag := flag.NewFlagSet("summary", flag.ContinueOnError)
-	markutPtr := summFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+	markutPtr := summFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 
 	err := summFlag.Parse(args)
 
@@ -974,12 +961,6 @@ func summarySubcommand(args []string) bool {
 
 	if err != nil {
 		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	if *markutPtr == "" {
-		summFlag.Usage()
-		fmt.Printf("ERROR: No -markut file is provided\n");
 		return false
 	}
 
@@ -1003,7 +984,7 @@ func captionsRingPush(ring []ChatMessage, message ChatMessage, capacity int) []C
 
 func chatSubcommand(args []string) bool {
 	chatFlag := flag.NewFlagSet("chat", flag.ContinueOnError)
-	markutPtr := chatFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+	markutPtr := chatFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 
 	err := chatFlag.Parse(args)
 
@@ -1013,12 +994,6 @@ func chatSubcommand(args []string) bool {
 
 	if err != nil {
 		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	if *markutPtr == "" {
-		chatFlag.Usage()
-		fmt.Printf("ERROR: No -markut file is provided\n");
 		return false
 	}
 
@@ -1057,7 +1032,7 @@ func chatSubcommand(args []string) bool {
 
 func chunkSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("chunk", flag.ContinueOnError)
-	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+	markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 	chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
 
 	err := subFlag.Parse(args)
@@ -1068,12 +1043,6 @@ func chunkSubcommand(args []string) bool {
 
 	if err != nil {
 		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	if *markutPtr == "" {
-		subFlag.Usage()
-		fmt.Printf("ERROR: No -markut file is provided\n")
 		return false
 	}
 
@@ -1134,7 +1103,7 @@ func fixupSubcommand(args []string) bool {
 
 func pruneSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("prune", flag.ContinueOnError)
-	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+	markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 
 	err := subFlag.Parse(args)
 
@@ -1144,12 +1113,6 @@ func pruneSubcommand(args []string) bool {
 
 	if err != nil {
 		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	if *markutPtr == "" {
-		subFlag.Usage()
-		fmt.Printf("ERROR: No -markut file is provided\n")
 		return false
 	}
 
@@ -1187,7 +1150,7 @@ func pruneSubcommand(args []string) bool {
 // TODO: Maybe watch mode should just be a flag for the `final` subcommand
 func watchSubcommand(args []string) bool {
 	subFlag := flag.NewFlagSet("watch", flag.ContinueOnError)
-	markutPtr := subFlag.String("markut", "", "Path to the Markut file with markers (mandatory)")
+	markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 	skipcatPtr := subFlag.Bool("skipcat", false, "Skip concatenation step")
 
 	err := subFlag.Parse(args)
@@ -1198,12 +1161,6 @@ func watchSubcommand(args []string) bool {
 
 	if err != nil {
 		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	if *markutPtr == "" {
-		subFlag.Usage()
-		fmt.Printf("ERROR: No -markut file is provided\n")
 		return false
 	}
 
