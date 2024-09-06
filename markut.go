@@ -354,10 +354,11 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 				outFlag := args[0]
 				context.ExtraOutFlags = append(context.ExtraOutFlags, string(outFlag.Text))
 			case "chat_offset":
-				if len(context.chunks) > 0  {
-					fmt.Printf("%s: ERROR: chat offset should be applied after `chat` commands but before any `chunks` commands. This is due to `chunk` commands making copies of the chat slices that are not affected by the consequent chat offsets\n", token.Loc);
-					return false;
-				}
+				// // TODO: this check does not make any sense when there are several chat commands
+				// if len(context.chunks) > 0  {
+				// 	fmt.Printf("%s: ERROR: chat offset should be applied after `chat` commands but before any `chunks` commands. This is due to `chunk` commands making copies of the chat slices that are not affected by the consequent chat offsets\n", token.Loc);
+				// 	return false;
+				// }
 
 				args, err = context.typeCheckArgs(token.Loc, TokenTimestamp, TokenTimestamp)
 				if err != nil {
