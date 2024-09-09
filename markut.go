@@ -752,6 +752,7 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
 		return err
 	}
 
+	fmt.Printf("INFO: Rename %s -> %s\n", unfinishedChunkName, chunk.Name());
 	return os.Rename(unfinishedChunkName, chunk.Name())
 }
 
