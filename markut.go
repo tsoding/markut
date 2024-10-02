@@ -130,6 +130,7 @@ type EvalContext struct {
 	AudioBitrate string
 
 	ExtraOutFlags []string
+	ExtraInFlags []string
 }
 
 func defaultContext() (context EvalContext) {
@@ -344,7 +345,7 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 					return false
 				}
 				context.AudioBitrate = string(args[0].Text)
-			case "of":
+			case "outf":
 				args, err = context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
@@ -353,6 +354,15 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 				}
 				outFlag := args[0]
 				context.ExtraOutFlags = append(context.ExtraOutFlags, string(outFlag.Text))
+			case "inf":
+				args, err = context.typeCheckArgs(token.Loc, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					return false
+				}
+				inFlag := args[0]
+				context.ExtraInFlags = append(context.ExtraInFlags, string(inFlag.Text))
 			case "chat_offset":
 				// // TODO: this check does not make any sense when there are several chat commands
 				// if len(context.chunks) > 0  {
@@ -718,6 +728,9 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
 	args = append(args, "-y");
 
 	args = append(args, "-ss", millisToSecsForFFmpeg(chunk.Start))
+	for _, inFlag := range context.ExtraInFlags {
+		args = append(args, inFlag)
+	}
 	args = append(args, "-i", chunk.InputPath)
 
 	if len(context.VideoCodec) > 0 {
