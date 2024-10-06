@@ -118,7 +118,6 @@ type EvalContext struct {
 	chunks []Chunk
 	chapters []Chapter
 	cuts []Cut
-	modified_cuts []int
 
 	argsStack []Token
 	chapStack []Chapter
@@ -724,12 +723,6 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 					Kind: TokenTimestamp,
 					Timestamp: context.chunks[n-1].Duration(),
 				})
-			case "modified_cut":
-				if len(context.chunks) == 0 {
-					fmt.Printf("%s: ERROR: no chunks defined for a modified_cut\n", token.Loc)
-					return false
-				}
-				context.modified_cuts = append(context.modified_cuts, len(context.chunks) - 1)
 			case "cut":
 				args, err = context.typeCheckArgs(token.Loc, TokenTimestamp)
 				if err != nil {
@@ -1111,7 +1104,6 @@ var Subcommands = map[string]Subcommand{
 		Run: func (name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
-			patchPtr := subFlag.Bool("patch", false, "Patch modified cuts")
 
 			err := subFlag.Parse(args)
 			if err == flag.ErrHelp {
@@ -1129,27 +1121,10 @@ var Subcommands = map[string]Subcommand{
 				return false
 			}
 
-			if *patchPtr {
-				for _, i := range context.modified_cuts {
-					chunk := context.chunks[i]
-					err := ffmpegCutChunk(context, chunk)
-					if err != nil {
-						fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk, err)
-					}
-					if i+1 < len(context.chunks) {
-						chunk = context.chunks[i+1]
-						err = ffmpegCutChunk(context, chunk)
-						if err != nil {
-							fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
-						}
-					}
-				}
-			} else {
-				for _, chunk := range context.chunks {
-					err := ffmpegCutChunk(context, chunk)
-					if err != nil {
-						fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
-					}
+			for _, chunk := range context.chunks {
+				err := ffmpegCutChunk(context, chunk)
+				if err != nil {
+					fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
 				}
 			}
 
