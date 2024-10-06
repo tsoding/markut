@@ -302,6 +302,108 @@ var funcs = map[string]Func{
 			return true
 		},
 	},
+	"chunk": {
+		Description: "Define a chunk between `start` and `end` timestamp for the current input defined by the `input` func",
+		Category: "chunk",
+		Signature: "<start:Timestamp> <end:Timestamp> %name",
+		Run: func(context *EvalContext, command string, token Token) bool {
+			args, err := context.typeCheckArgs(token.Loc, TokenTimestamp, TokenTimestamp)
+			if err != nil {
+				fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+				fmt.Printf("%s\n", err)
+				return false
+			}
+
+			start := args[1]
+			end := args[0]
+
+			if start.Timestamp < 0 {
+				fmt.Printf("%s: ERROR: the start of the chunk is negative %s\n", start.Loc, millisToTs(start.Timestamp));
+				return false
+			}
+
+			if end.Timestamp < 0 {
+				fmt.Printf("%s: ERROR: the end of the chunk is negative %s\n", end.Loc, millisToTs(end.Timestamp));
+				return false
+			}
+
+			if start.Timestamp > end.Timestamp {
+				fmt.Printf("%s: ERROR: the end of the chunk %s is earlier than its start %s\n", end.Loc, millisToTs(end.Timestamp), millisToTs(start.Timestamp));
+				fmt.Printf("%s: NOTE: the start is located here\n", start.Loc);
+				return false
+			}
+
+			chunk := Chunk{
+				Loc: token.Loc,
+				Start: start.Timestamp,
+				End: end.Timestamp,
+				InputPath: context.inputPath,
+				ChatLog: sliceChatLog(context.chatLog, start.Timestamp, end.Timestamp),
+			}
+
+			context.chunks = append(context.chunks, chunk)
+
+			for _, chapter := range context.chapStack {
+				if chapter.Timestamp < chunk.Start || chunk.End < chapter.Timestamp {
+					fmt.Printf("%s: ERROR: the timestamp %s of chapter \"%s\" is outside of the the current chunk\n", chapter.Loc, millisToTs(chapter.Timestamp), chapter.Label)
+					fmt.Printf("%s: NOTE: which starts at %s\n", start.Loc, millisToTs(start.Timestamp))
+					fmt.Printf("%s: NOTE: and ends at %s\n", end.Loc, millisToTs(end.Timestamp))
+					return false
+				}
+
+				context.chapters = append(context.chapters, Chapter{
+					Loc: chapter.Loc,
+					Timestamp: chapter.Timestamp - chunk.Start + context.chapOffset,
+					Label: chapter.Label,
+				})
+			}
+
+			context.chapOffset += chunk.End - chunk.Start
+
+			context.chapStack = []Chapter{}
+			return true
+		},
+
+	},
+	"blur": {
+		Description: "Blur the last defined chunk. Useful for bluring out sensitive information.",
+		Signature: "%name",
+		Category: "chunk",
+		Run: func(context *EvalContext, command string, token Token) bool {
+			if len(context.chunks) == 0 {
+				fmt.Printf("%s: ERROR: no chunks defined for a blur\n", token.Loc)
+				return false
+			}
+			context.chunks[len(context.chunks)-1].Blur = true
+			return true
+		},
+	},
+	"removed": {
+		Description: "Remove the last defined chunk. Useful for disabling a certain chunk, so you can reenable it later if needed.",
+		Signature: "%name",
+		Category: "chunk",
+		Run: func(context *EvalContext, command string, token Token) bool {
+			if len(context.chunks) == 0 {
+				fmt.Printf("%s: ERROR: no chunks defined for removal\n", token.Loc)
+				return false
+			}
+			context.chunks = context.chunks[:len(context.chunks)-1]
+			return true
+		},
+	},
+	"unfinished": {
+		Description: "Mark the last defined chunk as unfinished. This is used by the `markut watch` subcommand. `markut watch` does not render any unfinished chunks and keeps monitoring the MARKUT file until there is no unfinished chunks.",
+		Signature: "%name",
+		Category: "chunk",
+		Run: func(context *EvalContext, command string, token Token) bool {
+			if len(context.chunks) == 0 {
+				fmt.Printf("%s: ERROR: no chunks defined for marking as unfinished\n", token.Loc)
+				return false
+			}
+			context.chunks[len(context.chunks)-1].Unfinished = true
+			return true
+		},
+	},
 }
 
 // This function is compatible with the format https://www.twitchchatdownloader.com/ generates.
@@ -579,24 +681,6 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 					return false
 				}
 				context.modified_cuts = append(context.modified_cuts, len(context.chunks) - 1)
-			case "blur":
-				if len(context.chunks) == 0 {
-					fmt.Printf("%s: ERROR: no chunks defined for a blur\n", token.Loc)
-					return false
-				}
-				context.chunks[len(context.chunks)-1].Blur = true
-			case "removed":
-				if len(context.chunks) == 0 {
-					fmt.Printf("%s: ERROR: no chunks defined for removal\n", token.Loc)
-					return false
-				}
-				context.chunks = context.chunks[:len(context.chunks)-1]
-			case "unfinished":
-				if len(context.chunks) == 0 {
-					fmt.Printf("%s: ERROR: no chunks defined for marking as unfinished\n", token.Loc)
-					return false
-				}
-				context.chunks[len(context.chunks)-1].Unfinished = true
 			case "cut":
 				args, err = context.typeCheckArgs(token.Loc, TokenTimestamp)
 				if err != nil {
@@ -613,61 +697,6 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 					chunk: len(context.chunks) - 1,
 					pad: pad.Timestamp,
 				})
-			case "chunk":
-				args, err = context.typeCheckArgs(token.Loc, TokenTimestamp, TokenTimestamp)
-				if err != nil {
-					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
-					fmt.Printf("%s\n", err)
-					return false
-				}
-
-				start := args[1]
-				end := args[0]
-
-				if start.Timestamp < 0 {
-					fmt.Printf("%s: ERROR: the start of the chunk is negative %s\n", start.Loc, millisToTs(start.Timestamp));
-					return false
-				}
-
-				if end.Timestamp < 0 {
-					fmt.Printf("%s: ERROR: the end of the chunk is negative %s\n", end.Loc, millisToTs(end.Timestamp));
-					return false
-				}
-
-				if start.Timestamp > end.Timestamp {
-					fmt.Printf("%s: ERROR: the end of the chunk %s is earlier than its start %s\n", end.Loc, millisToTs(end.Timestamp), millisToTs(start.Timestamp));
-					fmt.Printf("%s: NOTE: the start is located here\n", start.Loc);
-					return false
-				}
-
-				chunk := Chunk{
-					Loc: token.Loc,
-					Start: start.Timestamp,
-					End: end.Timestamp,
-					InputPath: context.inputPath,
-					ChatLog: sliceChatLog(context.chatLog, start.Timestamp, end.Timestamp),
-				}
-
-				context.chunks = append(context.chunks, chunk)
-
-				for _, chapter := range context.chapStack {
-					if chapter.Timestamp < chunk.Start || chunk.End < chapter.Timestamp {
-						fmt.Printf("%s: ERROR: the timestamp %s of chapter \"%s\" is outside of the the current chunk\n", chapter.Loc, millisToTs(chapter.Timestamp), chapter.Label)
-						fmt.Printf("%s: NOTE: which starts at %s\n", start.Loc, millisToTs(start.Timestamp))
-						fmt.Printf("%s: NOTE: and ends at %s\n", end.Loc, millisToTs(end.Timestamp))
-						return false
-					}
-
-					context.chapters = append(context.chapters, Chapter{
-						Loc: chapter.Loc,
-						Timestamp: chapter.Timestamp - chunk.Start + context.chapOffset,
-						Label: chapter.Label,
-					})
-				}
-
-				context.chapOffset += chunk.End - chunk.Start
-
-				context.chapStack = []Chapter{}
 			default:
 				f, ok := funcs[command];
 				if !ok {
