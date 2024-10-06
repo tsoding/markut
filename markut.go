@@ -502,6 +502,37 @@ var funcs = map[string]Func{
 			return true;
 		},
 	},
+	"over": {
+		Description: "Copy the argument below the top fo the stack on top",
+		Signature: "<a:Type1> <b:Type2> -- <a:Type1> <b:Type2> <a:Type1>",
+		Category: "Stack",
+		Run: func(context *EvalContext, command string, token Token) bool {
+			arity := 2
+			if len(context.argsStack) < arity {
+				fmt.Printf("%s: Expected %d arguments but got %d", token.Loc, arity, len(context.argsStack));
+				return false;
+			}
+			n := len(context.argsStack)
+			context.argsStack = append(context.argsStack, context.argsStack[n-2]);
+			return true;
+		},
+	},
+	"dup": {
+		Description: "Duplicate the argument on top of the stack",
+		Signature: "<a:Type1> -- <a:Type1> <a:Type1>",
+		Category: "Stack",
+		Run: func(context *EvalContext, command string, token Token) bool {
+			arity := 1
+			if len(context.argsStack) < arity {
+				fmt.Printf("%s: Expected %d arguments but got %d", token.Loc, arity, len(context.argsStack));
+				return false;
+			}
+			n := len(context.argsStack)
+			// TODO: the location of the dupped value should be the location of the "dup" token
+			context.argsStack = append(context.argsStack, context.argsStack[n-1])
+			return true
+		},
+	},
 }
 
 // This function is compatible with the format https://www.twitchchatdownloader.com/ generates.
@@ -628,23 +659,6 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 					return false
 				}
 				context.inputPath = string(path.Text)
-			case "over":
-				arity := 2
-				if len(context.argsStack) < arity {
-					fmt.Printf("%s: Expected %d arguments but got %d", token.Loc, arity, len(context.argsStack));
-					return false;
-				}
-				n := len(context.argsStack)
-				context.argsStack = append(context.argsStack, context.argsStack[n-2]);
-			case "dup":
-				arity := 1
-				if len(context.argsStack) < arity {
-					fmt.Printf("%s: Expected %d arguments but got %d", token.Loc, arity, len(context.argsStack));
-					return false;
-				}
-				n := len(context.argsStack)
-				// TODO: the location of the dupped value should be the location of the "dup" token
-				context.argsStack = append(context.argsStack, context.argsStack[n-1])
 			case "chapter":
 				args, err = context.typeCheckArgs(token.Loc, TokenString, TokenTimestamp)
 				if err != nil {
