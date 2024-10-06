@@ -894,420 +894,11 @@ func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) error {
 	return nil
 }
 
-func finalSubcommand(args []string) bool {
-	subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
-	markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
-	patchPtr := subFlag.Bool("patch", false, "Patch modified cuts")
-
-	err := subFlag.Parse(args)
-	if err == flag.ErrHelp {
-		return true
-	}
-
-	if err != nil {
-		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	context := defaultContext()
-	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
-	if !ok {
-		return false
-	}
-
-	if *patchPtr {
-		for _, i := range context.modified_cuts {
-			chunk := context.chunks[i]
-			err := ffmpegCutChunk(context, chunk)
-			if err != nil {
-				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk, err)
-			}
-			if i+1 < len(context.chunks) {
-				chunk = context.chunks[i+1]
-				err = ffmpegCutChunk(context, chunk)
-				if err != nil {
-					fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
-				}
-			}
-		}
-	} else {
-		for _, chunk := range context.chunks {
-			err := ffmpegCutChunk(context, chunk)
-			if err != nil {
-				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
-			}
-		}
-	}
-
-	listPath := "final-list.txt"
-	err = ffmpegGenerateConcatList(context.chunks, listPath)
-	if err != nil {
-		fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
-		return false;
-	}
-
-	err = ffmpegConcatChunks(listPath, context.outputPath)
-	if err != nil {
-		fmt.Printf("ERROR: Could not generated final output %s: %s\n", context.outputPath, err)
-		return false
-	}
-
-	context.PrintSummary()
-
-	return true
-}
-
-func cutSubcommand(args []string) bool {
-	subFlag := flag.NewFlagSet("cut", flag.ContinueOnError)
-	markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
-
-	err := subFlag.Parse(args)
-	if err == flag.ErrHelp {
-		return true
-	}
-
-	if err != nil {
-		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	context := defaultContext()
-	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
-	if !ok {
-		return false
-	}
-
-	if len(context.cuts) == 0 {
-		fmt.Printf("ERROR: No cuts are provided. Use `cut` command after a `chunk` command to define a cut\n");
-		return false;
-	}
-
-	for _, cut := range context.cuts {
-		if cut.chunk+1 >= len(context.chunks) {
-			fmt.Printf("ERROR: %d is an invalid cut number. There is only %d of them.\n", cut.chunk, len(context.chunks)-1)
-			return false
-		}
-
-		cutChunks := []Chunk{
-			{
-				Start: context.chunks[cut.chunk].End - cut.pad,
-				End:   context.chunks[cut.chunk].End,
-				InputPath: context.chunks[cut.chunk].InputPath,
-			},
-			{
-				Start: context.chunks[cut.chunk+1].Start,
-				End:   context.chunks[cut.chunk+1].Start + cut.pad,
-				InputPath: context.chunks[cut.chunk+1].InputPath,
-			},
-		}
-
-		for _, chunk := range cutChunks {
-			err := ffmpegCutChunk(context, chunk)
-			if err != nil {
-				fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
-			}
-		}
-
-		cutListPath := "cut-%02d-list.txt"
-		listPath := fmt.Sprintf(cutListPath, cut.chunk)
-		err = ffmpegGenerateConcatList(cutChunks, listPath)
-		if err != nil {
-			fmt.Printf("ERROR: Could not generate not generate cut concat list %s: %s\n", cutListPath, err)
-			return false
-		}
-
-		cutOutputPath := fmt.Sprintf("cut-%02d.mp4", cut.chunk)
-		err = ffmpegConcatChunks(listPath, cutOutputPath)
-		if err != nil {
-			fmt.Printf("ERROR: Could not generate cut output file %s: %s\n", cutOutputPath, err)
-			return false
-		}
-
-		fmt.Printf("Generated %s\n", cutOutputPath);
-		fmt.Printf("%s: NOTE: cut is defined in here\n", context.chunks[cut.chunk].Loc);
-	}
-
-	return true
-}
-
-func summarySubcommand(args []string) bool {
-	summFlag := flag.NewFlagSet("summary", flag.ContinueOnError)
-	markutPtr := summFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
-
-	err := summFlag.Parse(args)
-
-	if err == flag.ErrHelp {
-		return true
-	}
-
-	if err != nil {
-		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	context := defaultContext();
-	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
-	if !ok {
-		return false
-	}
-
-	context.PrintSummary()
-
-	return true
-}
-
 func captionsRingPush(ring []ChatMessage, message ChatMessage, capacity int) []ChatMessage {
 	if len(ring) < capacity {
 		return append(ring, message)
 	}
 	return append(ring[1:], message)
-}
-
-func chatSubcommand(args []string) bool {
-	chatFlag := flag.NewFlagSet("chat", flag.ContinueOnError)
-	markutPtr := chatFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
-
-	err := chatFlag.Parse(args)
-
-	if err == flag.ErrHelp {
-		return true
-	}
-
-	if err != nil {
-		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	context := defaultContext()
-	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
-	if !ok {
-		return false
-	}
-
-	capacity := 1
-	ring := []ChatMessage{}
-	timeCursor := Millis(0)
-	subRipCounter := 0;
-	for _, chunk := range context.chunks {
-		prevTime := chunk.Start
-		for _, message := range chunk.ChatLog {
-			deltaTime := message.TimeOffset - prevTime
-			prevTime = message.TimeOffset
-			if len(ring) > 0 {
-				subRipCounter += 1
-				fmt.Printf("%d\n", subRipCounter);
-				fmt.Printf("%s --> %s\n", millisToSubRipTs(timeCursor), millisToSubRipTs(timeCursor + deltaTime));
-				for _, ringMessage := range ring {
-					fmt.Printf("%s\n", ringMessage.Text);
-				}
-				fmt.Printf("\n")
-			}
-			timeCursor += deltaTime
-			ring = captionsRingPush(ring, message, capacity);
-		}
-		timeCursor += chunk.End - prevTime
-	}
-
-	return true
-}
-
-func chunkSubcommand(args []string) bool {
-	subFlag := flag.NewFlagSet("chunk", flag.ContinueOnError)
-	markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
-	chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
-
-	err := subFlag.Parse(args)
-
-	if err == flag.ErrHelp {
-		return true
-	}
-
-	if err != nil {
-		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	context := defaultContext();
-	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
-	if !ok {
-		return false
-	}
-
-	if *chunkPtr > len(context.chunks) {
-		fmt.Printf("ERROR: %d is an incorrect chunk number. There is only %d of them.\n", *chunkPtr, len(context.chunks))
-		return false
-	}
-
-	chunk := context.chunks[*chunkPtr]
-
-	err = ffmpegCutChunk(context, chunk)
-	if err != nil {
-		fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
-		return false
-	}
-
-	fmt.Printf("%s is rendered!\n", chunk.Name())
-	return true
-}
-
-func fixupSubcommand(args []string) bool {
-	subFlag := flag.NewFlagSet("fixup", flag.ExitOnError)
-	inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
-	outputPtr := subFlag.String("output", "input.ts", "Path to the output video file")
-	yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
-
-	err := subFlag.Parse(args)
-	if err == flag.ErrHelp {
-		return true
-	}
-
-	if err != nil {
-		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	if *inputPtr == "" {
-		subFlag.Usage()
-		fmt.Printf("ERROR: No -input file is provided\n")
-		return false
-	}
-
-	err = ffmpegFixupInput(*inputPtr, *outputPtr, *yPtr)
-	if err != nil {
-		fmt.Printf("ERROR: Could not fixup input file %s: %s\n", *inputPtr, err)
-		return false
-	}
-	fmt.Printf("Generated %s\n", *outputPtr)
-
-	return true
-}
-
-func pruneSubcommand(args []string) bool {
-	subFlag := flag.NewFlagSet("prune", flag.ContinueOnError)
-	markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
-
-	err := subFlag.Parse(args)
-
-	if err == flag.ErrHelp {
-		return true
-	}
-
-	if err != nil {
-		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	context := defaultContext();
-	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
-	if !ok {
-		return false
-	}
-
-	files, err := ioutil.ReadDir(ChunksFolder)
-	if err != nil {
-		fmt.Printf("ERROR: could not read %s folder: %s\n", ChunksFolder, err);
-		return false;
-	}
-
-	for _, file := range files {
-		if !file.IsDir() {
-			filePath := fmt.Sprintf("%s/%s", ChunksFolder, file.Name());
-			if !context.containsChunkWithName(filePath) {
-				fmt.Printf("INFO: deleting chunk file %s\n", filePath);
-				err = os.Remove(filePath)
-				if err != nil {
-					fmt.Printf("ERROR: could not remove file %s: %s\n", filePath, err)
-					return false;
-				}
-			}
-		}
-	}
-
-	fmt.Printf("DONE\n");
-
-	return true
-}
-
-// TODO: Maybe watch mode should just be a flag for the `final` subcommand
-func watchSubcommand(args []string) bool {
-	subFlag := flag.NewFlagSet("watch", flag.ContinueOnError)
-	markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
-	skipcatPtr := subFlag.Bool("skipcat", false, "Skip concatenation step")
-
-	err := subFlag.Parse(args)
-
-	if err == flag.ErrHelp {
-		return true
-	}
-
-	if err != nil {
-		fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-		return false
-	}
-
-	fmt.Printf("INFO: Waiting for updates to %s\n", *markutPtr)
-	for {
-		// NOTE: always use rsync(1) for updating the MARKUT file remotely.
-		// This kind of crappy modification checking needs at least some sort of atomicity.
-		// rsync(1) is as atomic as rename(2). So it's alright for majority of the cases.
-
-		context := defaultContext();
-		ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
-		if !ok {
-			return false
-		}
-
-		done := true
-		for _, chunk := range(context.chunks) {
-			if chunk.Unfinished {
-				done = false
-				continue
-			}
-
-			if _, err := os.Stat(chunk.Name()); errors.Is(err, os.ErrNotExist) {
-				err = ffmpegCutChunk(context, chunk)
-				if err != nil {
-					fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
-					return false
-				}
-				fmt.Printf("INFO: Waiting for more updates to %s\n", *markutPtr)
-				done = false
-				break
-			}
-		}
-
-		if done {
-			break
-		}
-
-		time.Sleep(1 * time.Second)
-	}
-
-	context := defaultContext()
-	ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
-	if !ok {
-		return false
-	}
-
-	if !*skipcatPtr {
-
-		listPath := "final-list.txt"
-		err = ffmpegGenerateConcatList(context.chunks, listPath)
-		if err != nil {
-			fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
-			return false;
-		}
-
-		err = ffmpegConcatChunks(listPath, context.outputPath)
-		if err != nil {
-			fmt.Printf("ERROR: Could not generated final output %s: %s\n", context.outputPath, err)
-			return false
-		}
-	}
-
-	context.PrintSummary()
-
-	return true
 }
 
 type Subcommand struct {
@@ -1318,44 +909,437 @@ type Subcommand struct {
 
 var Subcommands = []Subcommand{
 	{
-		Name:        "fixup",
-		Run:         fixupSubcommand,
+		Name: "fixup",
 		Description: "Fixup the initial footage",
+		Run: func(args []string) bool {
+			subFlag := flag.NewFlagSet("fixup", flag.ExitOnError)
+			inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
+			outputPtr := subFlag.String("output", "input.ts", "Path to the output video file")
+			yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
+
+			err := subFlag.Parse(args)
+			if err == flag.ErrHelp {
+				return true
+			}
+
+			if err != nil {
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				return false
+			}
+
+			if *inputPtr == "" {
+				subFlag.Usage()
+				fmt.Printf("ERROR: No -input file is provided\n")
+				return false
+			}
+
+			err = ffmpegFixupInput(*inputPtr, *outputPtr, *yPtr)
+			if err != nil {
+				fmt.Printf("ERROR: Could not fixup input file %s: %s\n", *inputPtr, err)
+				return false
+			}
+			fmt.Printf("Generated %s\n", *outputPtr)
+
+			return true
+		},
 	},
 	{
-		Name:        "cut",
-		Run:         cutSubcommand,
+		Name: "cut",
 		Description: "Render specific cut of the final video",
+		Run: func (args []string) bool {
+			subFlag := flag.NewFlagSet("cut", flag.ContinueOnError)
+			markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
+
+			err := subFlag.Parse(args)
+			if err == flag.ErrHelp {
+				return true
+			}
+
+			if err != nil {
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				return false
+			}
+
+			context := defaultContext()
+			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			if !ok {
+				return false
+			}
+
+			if len(context.cuts) == 0 {
+				fmt.Printf("ERROR: No cuts are provided. Use `cut` command after a `chunk` command to define a cut\n");
+				return false;
+			}
+
+			for _, cut := range context.cuts {
+				if cut.chunk+1 >= len(context.chunks) {
+					fmt.Printf("ERROR: %d is an invalid cut number. There is only %d of them.\n", cut.chunk, len(context.chunks)-1)
+					return false
+				}
+
+				cutChunks := []Chunk{
+					{
+						Start: context.chunks[cut.chunk].End - cut.pad,
+						End:   context.chunks[cut.chunk].End,
+						InputPath: context.chunks[cut.chunk].InputPath,
+					},
+					{
+						Start: context.chunks[cut.chunk+1].Start,
+						End:   context.chunks[cut.chunk+1].Start + cut.pad,
+						InputPath: context.chunks[cut.chunk+1].InputPath,
+					},
+				}
+
+				for _, chunk := range cutChunks {
+					err := ffmpegCutChunk(context, chunk)
+					if err != nil {
+						fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
+					}
+				}
+
+				cutListPath := "cut-%02d-list.txt"
+				listPath := fmt.Sprintf(cutListPath, cut.chunk)
+				err = ffmpegGenerateConcatList(cutChunks, listPath)
+				if err != nil {
+					fmt.Printf("ERROR: Could not generate not generate cut concat list %s: %s\n", cutListPath, err)
+					return false
+				}
+
+				cutOutputPath := fmt.Sprintf("cut-%02d.mp4", cut.chunk)
+				err = ffmpegConcatChunks(listPath, cutOutputPath)
+				if err != nil {
+					fmt.Printf("ERROR: Could not generate cut output file %s: %s\n", cutOutputPath, err)
+					return false
+				}
+
+				fmt.Printf("Generated %s\n", cutOutputPath);
+				fmt.Printf("%s: NOTE: cut is defined in here\n", context.chunks[cut.chunk].Loc);
+			}
+
+			return true
+		},
 	},
 	{
-		Name:        "chunk",
-		Run:         chunkSubcommand,
+		Name: "chunk",
 		Description: "Render specific chunk of the final video",
+		Run: func (args []string) bool {
+			subFlag := flag.NewFlagSet("chunk", flag.ContinueOnError)
+			markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
+			chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
+
+			err := subFlag.Parse(args)
+
+			if err == flag.ErrHelp {
+				return true
+			}
+
+			if err != nil {
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				return false
+			}
+
+			context := defaultContext();
+			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			if !ok {
+				return false
+			}
+
+			if *chunkPtr > len(context.chunks) {
+				fmt.Printf("ERROR: %d is an incorrect chunk number. There is only %d of them.\n", *chunkPtr, len(context.chunks))
+				return false
+			}
+
+			chunk := context.chunks[*chunkPtr]
+
+			err = ffmpegCutChunk(context, chunk)
+			if err != nil {
+				fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
+				return false
+			}
+
+			fmt.Printf("%s is rendered!\n", chunk.Name())
+			return true
+		},
 	},
 	{
-		Name:        "final",
-		Run:         finalSubcommand,
+		Name: "final",
 		Description: "Render the final video",
+		Run: func (args []string) bool {
+			subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
+			markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
+			patchPtr := subFlag.Bool("patch", false, "Patch modified cuts")
+
+			err := subFlag.Parse(args)
+			if err == flag.ErrHelp {
+				return true
+			}
+
+			if err != nil {
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				return false
+			}
+
+			context := defaultContext()
+			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			if !ok {
+				return false
+			}
+
+			if *patchPtr {
+				for _, i := range context.modified_cuts {
+					chunk := context.chunks[i]
+					err := ffmpegCutChunk(context, chunk)
+					if err != nil {
+						fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk, err)
+					}
+					if i+1 < len(context.chunks) {
+						chunk = context.chunks[i+1]
+						err = ffmpegCutChunk(context, chunk)
+						if err != nil {
+							fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
+						}
+					}
+				}
+			} else {
+				for _, chunk := range context.chunks {
+					err := ffmpegCutChunk(context, chunk)
+					if err != nil {
+						fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
+					}
+				}
+			}
+
+			listPath := "final-list.txt"
+			err = ffmpegGenerateConcatList(context.chunks, listPath)
+			if err != nil {
+				fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
+				return false;
+			}
+
+			err = ffmpegConcatChunks(listPath, context.outputPath)
+			if err != nil {
+				fmt.Printf("ERROR: Could not generated final output %s: %s\n", context.outputPath, err)
+				return false
+			}
+
+			context.PrintSummary()
+
+			return true
+		},
 	},
 	{
 		Name: "summary",
-		Run: summarySubcommand,
 		Description: "Print the summary of the video",
+		Run: func (args []string) bool {
+			summFlag := flag.NewFlagSet("summary", flag.ContinueOnError)
+			markutPtr := summFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
+
+			err := summFlag.Parse(args)
+
+			if err == flag.ErrHelp {
+				return true
+			}
+
+			if err != nil {
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				return false
+			}
+
+			context := defaultContext();
+			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			if !ok {
+				return false
+			}
+
+			context.PrintSummary()
+
+			return true
+		},
 	},
 	{
 		Name: "chat",
-		Run: chatSubcommand,
 		Description: "Generate chat captions",
+		Run: func (args []string) bool {
+			chatFlag := flag.NewFlagSet("chat", flag.ContinueOnError)
+			markutPtr := chatFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
+
+			err := chatFlag.Parse(args)
+
+			if err == flag.ErrHelp {
+				return true
+			}
+
+			if err != nil {
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				return false
+			}
+
+			context := defaultContext()
+			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			if !ok {
+				return false
+			}
+
+			capacity := 1
+			ring := []ChatMessage{}
+			timeCursor := Millis(0)
+			subRipCounter := 0;
+			for _, chunk := range context.chunks {
+				prevTime := chunk.Start
+				for _, message := range chunk.ChatLog {
+					deltaTime := message.TimeOffset - prevTime
+					prevTime = message.TimeOffset
+					if len(ring) > 0 {
+						subRipCounter += 1
+						fmt.Printf("%d\n", subRipCounter);
+						fmt.Printf("%s --> %s\n", millisToSubRipTs(timeCursor), millisToSubRipTs(timeCursor + deltaTime));
+						for _, ringMessage := range ring {
+							fmt.Printf("%s\n", ringMessage.Text);
+						}
+						fmt.Printf("\n")
+					}
+					timeCursor += deltaTime
+					ring = captionsRingPush(ring, message, capacity);
+				}
+				timeCursor += chunk.End - prevTime
+			}
+
+			return true
+		},
 	},
 	{
 		Name: "prune",
-		Run: pruneSubcommand,
 		Description: "Prune unused chunks",
+		Run: func (args []string) bool {
+			subFlag := flag.NewFlagSet("prune", flag.ContinueOnError)
+			markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
+
+			err := subFlag.Parse(args)
+
+			if err == flag.ErrHelp {
+				return true
+			}
+
+			if err != nil {
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				return false
+			}
+
+			context := defaultContext();
+			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			if !ok {
+				return false
+			}
+
+			files, err := ioutil.ReadDir(ChunksFolder)
+			if err != nil {
+				fmt.Printf("ERROR: could not read %s folder: %s\n", ChunksFolder, err);
+				return false;
+			}
+
+			for _, file := range files {
+				if !file.IsDir() {
+					filePath := fmt.Sprintf("%s/%s", ChunksFolder, file.Name());
+					if !context.containsChunkWithName(filePath) {
+						fmt.Printf("INFO: deleting chunk file %s\n", filePath);
+						err = os.Remove(filePath)
+						if err != nil {
+							fmt.Printf("ERROR: could not remove file %s: %s\n", filePath, err)
+							return false;
+						}
+					}
+				}
+			}
+
+			fmt.Printf("DONE\n");
+
+			return true
+		},
 	},
+	// TODO: Maybe watch mode should just be a flag for the `final` subcommand
 	{
 		Name: "watch",
-		Run: watchSubcommand,
 		Description: "Render finished chunks in watch mode every time MARKUT file is modified",
+		Run: func (args []string) bool {
+			subFlag := flag.NewFlagSet("watch", flag.ContinueOnError)
+			markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
+			skipcatPtr := subFlag.Bool("skipcat", false, "Skip concatenation step")
+
+			err := subFlag.Parse(args)
+
+			if err == flag.ErrHelp {
+				return true
+			}
+
+			if err != nil {
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				return false
+			}
+
+			fmt.Printf("INFO: Waiting for updates to %s\n", *markutPtr)
+			for {
+				// NOTE: always use rsync(1) for updating the MARKUT file remotely.
+				// This kind of crappy modification checking needs at least some sort of atomicity.
+				// rsync(1) is as atomic as rename(2). So it's alright for majority of the cases.
+
+				context := defaultContext();
+				ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+				if !ok {
+					return false
+				}
+
+				done := true
+				for _, chunk := range(context.chunks) {
+					if chunk.Unfinished {
+						done = false
+						continue
+					}
+
+					if _, err := os.Stat(chunk.Name()); errors.Is(err, os.ErrNotExist) {
+						err = ffmpegCutChunk(context, chunk)
+						if err != nil {
+							fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
+							return false
+						}
+						fmt.Printf("INFO: Waiting for more updates to %s\n", *markutPtr)
+						done = false
+						break
+					}
+				}
+
+				if done {
+					break
+				}
+
+				time.Sleep(1 * time.Second)
+			}
+
+			context := defaultContext()
+			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			if !ok {
+				return false
+			}
+
+			if !*skipcatPtr {
+
+				listPath := "final-list.txt"
+				err = ffmpegGenerateConcatList(context.chunks, listPath)
+				if err != nil {
+					fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
+					return false;
+				}
+
+				err = ffmpegConcatChunks(listPath, context.outputPath)
+				if err != nil {
+					fmt.Printf("ERROR: Could not generated final output %s: %s\n", context.outputPath, err)
+					return false
+				}
+			}
+
+			context.PrintSummary()
+
+			return true
+		},
 	},
 }
 
