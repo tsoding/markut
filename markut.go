@@ -903,7 +903,7 @@ func captionsRingPush(ring []ChatMessage, message ChatMessage, capacity int) []C
 
 type Subcommand struct {
 	Name        string
-	Run         func(args []string) bool
+	Run         func(name string, args []string) bool
 	Description string
 }
 
@@ -911,8 +911,8 @@ var Subcommands = []Subcommand{
 	{
 		Name: "fixup",
 		Description: "Fixup the initial footage",
-		Run: func(args []string) bool {
-			subFlag := flag.NewFlagSet("fixup", flag.ExitOnError)
+		Run: func(name string, args []string) bool {
+			subFlag := flag.NewFlagSet(name, flag.ExitOnError)
 			inputPtr := subFlag.String("input", "", "Path to the input video file (mandatory)")
 			outputPtr := subFlag.String("output", "input.ts", "Path to the output video file")
 			yPtr := subFlag.Bool("y", false, "Pass -y to ffmpeg")
@@ -946,8 +946,8 @@ var Subcommands = []Subcommand{
 	{
 		Name: "cut",
 		Description: "Render specific cut of the final video",
-		Run: func (args []string) bool {
-			subFlag := flag.NewFlagSet("cut", flag.ContinueOnError)
+		Run: func (name string, args []string) bool {
+			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 
 			err := subFlag.Parse(args)
@@ -1022,8 +1022,8 @@ var Subcommands = []Subcommand{
 	{
 		Name: "chunk",
 		Description: "Render specific chunk of the final video",
-		Run: func (args []string) bool {
-			subFlag := flag.NewFlagSet("chunk", flag.ContinueOnError)
+		Run: func (name string, args []string) bool {
+			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 			chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
 
@@ -1064,8 +1064,8 @@ var Subcommands = []Subcommand{
 	{
 		Name: "final",
 		Description: "Render the final video",
-		Run: func (args []string) bool {
-			subFlag := flag.NewFlagSet("final", flag.ContinueOnError)
+		Run: func (name string, args []string) bool {
+			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 			patchPtr := subFlag.Bool("patch", false, "Patch modified cuts")
 
@@ -1130,8 +1130,8 @@ var Subcommands = []Subcommand{
 	{
 		Name: "summary",
 		Description: "Print the summary of the video",
-		Run: func (args []string) bool {
-			summFlag := flag.NewFlagSet("summary", flag.ContinueOnError)
+		Run: func (name string, args []string) bool {
+			summFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := summFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 
 			err := summFlag.Parse(args)
@@ -1159,8 +1159,8 @@ var Subcommands = []Subcommand{
 	{
 		Name: "chat",
 		Description: "Generate chat captions",
-		Run: func (args []string) bool {
-			chatFlag := flag.NewFlagSet("chat", flag.ContinueOnError)
+		Run: func (name string, args []string) bool {
+			chatFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := chatFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 
 			err := chatFlag.Parse(args)
@@ -1210,8 +1210,8 @@ var Subcommands = []Subcommand{
 	{
 		Name: "prune",
 		Description: "Prune unused chunks",
-		Run: func (args []string) bool {
-			subFlag := flag.NewFlagSet("prune", flag.ContinueOnError)
+		Run: func (name string, args []string) bool {
+			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 
 			err := subFlag.Parse(args)
@@ -1260,8 +1260,8 @@ var Subcommands = []Subcommand{
 	{
 		Name: "watch",
 		Description: "Render finished chunks in watch mode every time MARKUT file is modified",
-		Run: func (args []string) bool {
-			subFlag := flag.NewFlagSet("watch", flag.ContinueOnError)
+		Run: func (name string, args []string) bool {
+			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the Markut file with markers (mandatory)")
 			skipcatPtr := subFlag.Bool("skipcat", false, "Skip concatenation step")
 
@@ -1362,7 +1362,7 @@ func main() {
 
 	for _, subcommand := range Subcommands {
 		if subcommand.Name == os.Args[1] {
-			ok := subcommand.Run(os.Args[2:])
+			ok := subcommand.Run(subcommand.Name, os.Args[2:])
 			if !ok {
 				os.Exit(1)
 			}
