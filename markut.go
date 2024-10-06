@@ -902,14 +902,12 @@ func captionsRingPush(ring []ChatMessage, message ChatMessage, capacity int) []C
 }
 
 type Subcommand struct {
-	Name        string
 	Run         func(name string, args []string) bool
 	Description string
 }
 
-var Subcommands = []Subcommand{
-	{
-		Name: "fixup",
+var Subcommands = map[string]Subcommand{
+	"fixup": {
 		Description: "Fixup the initial footage",
 		Run: func(name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ExitOnError)
@@ -943,8 +941,7 @@ var Subcommands = []Subcommand{
 			return true
 		},
 	},
-	{
-		Name: "cut",
+	"cut": 	{
 		Description: "Render specific cut of the final video",
 		Run: func (name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -1019,8 +1016,7 @@ var Subcommands = []Subcommand{
 			return true
 		},
 	},
-	{
-		Name: "chunk",
+	"chunk": 	{
 		Description: "Render specific chunk of the final video",
 		Run: func (name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -1061,8 +1057,7 @@ var Subcommands = []Subcommand{
 			return true
 		},
 	},
-	{
-		Name: "final",
+	"final": 	{
 		Description: "Render the final video",
 		Run: func (name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -1127,8 +1122,7 @@ var Subcommands = []Subcommand{
 			return true
 		},
 	},
-	{
-		Name: "summary",
+	"summary": 	{
 		Description: "Print the summary of the video",
 		Run: func (name string, args []string) bool {
 			summFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -1156,8 +1150,7 @@ var Subcommands = []Subcommand{
 			return true
 		},
 	},
-	{
-		Name: "chat",
+	"chat": 	{
 		Description: "Generate chat captions",
 		Run: func (name string, args []string) bool {
 			chatFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -1207,8 +1200,7 @@ var Subcommands = []Subcommand{
 			return true
 		},
 	},
-	{
-		Name: "prune",
+	"prune": 	{
 		Description: "Prune unused chunks",
 		Run: func (name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -1257,8 +1249,7 @@ var Subcommands = []Subcommand{
 		},
 	},
 	// TODO: Maybe watch mode should just be a flag for the `final` subcommand
-	{
-		Name: "watch",
+	"watch": 	{
 		Description: "Render finished chunks in watch mode every time MARKUT file is modified",
 		Run: func (name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -1344,10 +1335,15 @@ var Subcommands = []Subcommand{
 }
 
 func usage() {
+	names := []string{};
+	for name, _ := range Subcommands {
+		names = append(names, name)
+	}
+	sort.Strings(names);
 	fmt.Printf("Usage: markut <SUBCOMMAND> [OPTIONS]\n")
 	fmt.Printf("SUBCOMMANDS:\n")
-	for _, subcommand := range Subcommands {
-		fmt.Printf("    %s - %s\n", subcommand.Name, subcommand.Description)
+	for _, name := range names {
+		fmt.Printf("    %s - %s\n", name, Subcommands[name].Description)
 	}
 	fmt.Printf("ENVARS:\n")
 	fmt.Printf("    FFMPEG_PREFIX      Prefix path for a custom ffmpeg distribution\n")
@@ -1360,17 +1356,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	for _, subcommand := range Subcommands {
-		if subcommand.Name == os.Args[1] {
-			ok := subcommand.Run(subcommand.Name, os.Args[2:])
-			if !ok {
-				os.Exit(1)
-			}
-			os.Exit(0)
-		}
+	name := os.Args[1];
+	args := os.Args[2:];
+	subcommand, ok := Subcommands[name];
+	if !ok {
+		usage()
+		fmt.Printf("ERROR: Unknown subcommand %s\n", name)
+		os.Exit(1)
 	}
-
-	usage()
-	fmt.Printf("ERROR: Unknown subcommand %s\n", os.Args[1])
-	os.Exit(1)
+	if !subcommand.Run(name, args) {
+		os.Exit(1)
+	}
 }
