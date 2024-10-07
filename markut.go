@@ -533,6 +533,68 @@ var funcs = map[string]Func{
 			return true
 		},
 	},
+	"input": {
+		Description: "Set the current input for the consequent chunks.",
+		Category: "Misc",
+		Signature: "<filePath:String> --",
+		Run: func(context *EvalContext, command string, token Token) bool {
+			args, err := context.typeCheckArgs(token.Loc, TokenString)
+			if err != nil {
+				fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+				fmt.Printf("%s\n", err)
+				return false
+			}
+			path := args[0]
+			if len(path.Text) == 0 {
+				fmt.Printf("%s: ERROR: cannot set empty input path\n", path.Loc);
+				return false
+			}
+			context.inputPath = string(path.Text)
+			return true
+		},
+	},
+	"chapter": {
+		Description: "Define a new YouTube chapter for within a chunk for `markut summary` command.",
+		Category: "Misc",
+		Signature: "<timestamp:Timestamp> <title:String> --",
+		Run: func(context *EvalContext, command string, token Token) bool {
+			args, err := context.typeCheckArgs(token.Loc, TokenString, TokenTimestamp)
+			if err != nil {
+				fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+				fmt.Printf("%s\n", err)
+				return false
+			}
+			context.chapStack = append(context.chapStack, Chapter{
+				Loc: args[1].Loc,
+				Label: string(args[0].Text),
+				Timestamp: args[1].Timestamp,
+			})
+			return true
+		},
+	},
+	"cut": {
+		Description: "Define a new cut for `markut cut` command.",
+		Category: "Misc",
+		Signature: "<padding:Timestamp> --",
+		Run: func(context *EvalContext, command string, token Token) bool {
+			args, err := context.typeCheckArgs(token.Loc, TokenTimestamp)
+			if err != nil {
+				fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+				fmt.Printf("%s\n", err)
+				return false
+			}
+			pad := args[0]
+			if len(context.chunks) == 0 {
+				fmt.Printf("%s: ERROR: no chunks defined for a cut\n", token.Loc)
+				return false
+			}
+			context.cuts = append(context.cuts, Cut{
+				chunk: len(context.chunks) - 1,
+				pad: pad.Timestamp,
+			})
+			return true
+		},
+	},
 }
 
 // This function is compatible with the format https://www.twitchchatdownloader.com/ generates.
@@ -634,9 +696,9 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 			context.argsStack = append(context.argsStack, token)
 		case TokenSymbol:
 			command := string(token.Text)
-			switch command {
-			case "include":
-				args, err = context.typeCheckArgs(token.Loc, TokenString)
+			// TODO: Moving `include` func to funcs map, create an initialization loop. Figure out how to fix that.
+			if command == "include" {
+				args, err := context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
 					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
 					fmt.Printf("%s\n", err)
@@ -646,122 +708,16 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 				if !context.evalMarkutFile(string(path.Text)) {
 					return false
 				}
-			case "input":
-				args, err = context.typeCheckArgs(token.Loc, TokenString)
-				if err != nil {
-					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
-					fmt.Printf("%s\n", err)
-					return false
-				}
-				path := args[0]
-				if len(path.Text) == 0 {
-					fmt.Printf("%s: ERROR: cannot set empty input path\n", path.Loc);
-					return false
-				}
-				context.inputPath = string(path.Text)
-			case "chapter":
-				args, err = context.typeCheckArgs(token.Loc, TokenString, TokenTimestamp)
-				if err != nil {
-					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
-					fmt.Printf("%s\n", err)
-					return false
-				}
-				context.chapStack = append(context.chapStack, Chapter{
-					Loc: args[1].Loc,
-					Label: string(args[0].Text),
-					Timestamp: args[1].Timestamp,
-				})
-			case "puts":
-				args, err = context.typeCheckArgs(token.Loc, TokenString)
-				if err != nil {
-					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
-					fmt.Printf("%s\n", err)
-					return false
-				}
-				fmt.Printf("%s", string(args[0].Text));
-			case "putd":
-				args, err = context.typeCheckArgs(token.Loc, TokenTimestamp)
-				if err != nil {
-					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
-					fmt.Printf("%s\n", err)
-					return false
-				}
-				fmt.Printf("%d", int(args[0].Timestamp));
-			case "putt":
-				args, err = context.typeCheckArgs(token.Loc, TokenTimestamp)
-				if err != nil {
-					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
-					fmt.Printf("%s\n", err)
-					return false
-				}
-				fmt.Printf("%s", millisToTs(args[0].Timestamp));
-			case "here":
-				context.argsStack = append(context.argsStack, Token{
-					Loc: token.Loc,
-					Kind: TokenString,
-					Text: []rune(token.Loc.String()),
-				})
-			case "chunk_location":
-				n := len(context.chunks)
-				if n == 0 {
-					fmt.Printf("%s: ERROR: no chunks defined\n", token.Loc)
-					return false
-				}
+				return true
+			}
 
-				context.argsStack = append(context.argsStack, Token{
-					Loc: token.Loc,
-					Kind: TokenString,
-					Text: []rune(context.chunks[n-1].Loc.String()),
-				})
-			case "chunk_number":
-				n := len(context.chunks)
-				if n == 0 {
-					fmt.Printf("%s: ERROR: no chunks defined\n", token.Loc)
-					return false
-				}
-
-				context.argsStack = append(context.argsStack, Token{
-					Loc: token.Loc,
-					Kind: TokenTimestamp,
-					Timestamp: Millis(n-1),
-				})
-			case "chunk_duration":
-				n := len(context.chunks)
-				if n == 0 {
-					fmt.Printf("%s: ERROR: no chunks defined\n", token.Loc)
-					return false
-				}
-
-				context.argsStack = append(context.argsStack, Token{
-					Loc: token.Loc,
-					Kind: TokenTimestamp,
-					Timestamp: context.chunks[n-1].Duration(),
-				})
-			case "cut":
-				args, err = context.typeCheckArgs(token.Loc, TokenTimestamp)
-				if err != nil {
-					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
-					fmt.Printf("%s\n", err)
-					return false
-				}
-				pad := args[0]
-				if len(context.chunks) == 0 {
-					fmt.Printf("%s: ERROR: no chunks defined for a cut\n", token.Loc)
-					return false
-				}
-				context.cuts = append(context.cuts, Cut{
-					chunk: len(context.chunks) - 1,
-					pad: pad.Timestamp,
-				})
-			default:
-				f, ok := funcs[command];
-				if !ok {
-					fmt.Printf("%s: ERROR: Unknown command %s\n", token.Loc, command)
-					return false
-				}
-				if !f.Run(context, command, token) {
-					return false
-				}
+			f, ok := funcs[command];
+			if !ok {
+				fmt.Printf("%s: ERROR: Unknown command %s\n", token.Loc, command)
+				return false
+			}
+			if !f.Run(context, command, token) {
+				return false
 			}
 		default:
 			fmt.Printf("%s: ERROR: Unexpected token %s\n", token.Loc, TokenKindName[token.Kind]);
