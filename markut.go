@@ -14,29 +14,35 @@ import (
 	"sort"
 )
 
-func millisToTs(millis Millis) string {
-	sign := ""
+func decomposeMillis(millis Millis) (hh int64, mm int64, ss int64, ms int64, sign string) {
+	sign = ""
 	if millis < 0 {
 		sign = "-"
 		millis = -millis
 	}
-	hh := millis / 1000 / 60 / 60
-	mm := millis / 1000 / 60 % 60
-	ss := millis / 1000 % 60
-	ms := millis % 1000
+	hh = int64(millis / 1000 / 60 / 60)
+	mm = int64(millis / 1000 / 60 % 60)
+	ss = int64(millis / 1000 % 60)
+	ms = int64(millis % 1000)
+	return
+}
+
+// Timestamp format used by Markut Language
+func millisToTs(millis Millis) string {
+	hh, mm, ss, ms, sign := decomposeMillis(millis)
 	return fmt.Sprintf("%s%02d:%02d:%02d.%03d", sign, hh, mm, ss, ms)
 }
 
+// Timestamp format used on YouTube
+func millisToYouTubeTs(millis Millis) string {
+	hh, mm, ss, _, sign := decomposeMillis(millis)
+	return fmt.Sprintf("%s%02d:%02d:%02d", sign, hh, mm, ss)
+}
+
+// Timestamp format used by SubRip https://en.wikipedia.org/wiki/SubRip that we
+// use for generating the chat in subtitles on YouTube
 func millisToSubRipTs(millis Millis) string {
-	sign := ""
-	if millis < 0 {
-		sign = "-"
-		millis = -millis
-	}
-	hh := millis / 1000 / 60 / 60
-	mm := millis / 1000 / 60 % 60
-	ss := millis / 1000 % 60
-	ms := millis % 1000
+	hh, mm, ss, ms, sign := decomposeMillis(millis)
 	return fmt.Sprintf("%s%02d:%02d:%02d,%03d", sign, hh, mm, ss, ms)
 }
 
@@ -210,7 +216,7 @@ func (context EvalContext) PrintSummary() {
 	fmt.Println()
 	fmt.Printf(">>> Chapters (%d):\n", len(context.chapters))
 	for _, chapter := range context.chapters {
-		fmt.Printf("- %s - %s\n", millisToTs(chapter.Timestamp), chapter.Label)
+		fmt.Printf("- %s - %s\n", millisToYouTubeTs(chapter.Timestamp), chapter.Label)
 	}
 	fmt.Println()
 	fmt.Printf(">>> Length:\n")
