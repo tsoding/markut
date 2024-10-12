@@ -139,24 +139,50 @@ const (
 	DefaultAudioBitrate = "300k"
 )
 
-func defaultContext() (context EvalContext) {
-	// Default chunk transcoding parameters
-	context.VideoCodec = DefaultVideoCodec
-	context.VideoBitrate = DefaultVideoBitrate
-	context.AudioCodec = DefaultAudioCodec
-	context.AudioBitrate = DefaultAudioBitrate
-	context.outputPath = "output.mp4"
-	return
+func defaultContext() (EvalContext, bool) {
+	context := EvalContext{
+		// Default chunk transcoding parameters
+		VideoCodec: DefaultVideoCodec,
+		VideoBitrate: DefaultVideoBitrate,
+		AudioCodec: DefaultAudioCodec,
+		AudioBitrate: DefaultAudioBitrate,
+		outputPath: "output.mp4",
+	}
+
+	if home, ok := os.LookupEnv("HOME"); ok {
+		path := path.Join(home, ".markut");
+		content, err := ioutil.ReadFile(path);
+		if err != nil {
+			if os.IsNotExist(err) {
+				return context, true;
+			} 
+			fmt.Printf("ERROR: Could not open %s to read as a config: %s\n", path, err);
+			return context, false;
+		}
+		if !context.evalMarkutContent(string(content), path) {
+			return context, false
+		}
+	}
+	return context, true;
 }
 
 func (context EvalContext) PrintSummary() {
-	fmt.Println("Cuts:")
+	// TODO: Print where the Main Output Parameters were defined
+	//   In case they were defined in ~/.markut for instance
+	// TODO: Print Extra Input and Output parameters and where they were defined
+	fmt.Printf(">>> Main Output Parameters:\n")
+	fmt.Printf("Video Codec:   %s\n", context.VideoCodec);
+	fmt.Printf("Video Bitrate: %s\n", context.VideoBitrate);
+	fmt.Printf("Audio Codec:   %s\n", context.AudioCodec);
+	fmt.Printf("Audio Bitrate: %s\n", context.AudioBitrate);
+	fmt.Println()
+	fmt.Printf(">>> Cuts (%d):\n", max(len(context.chunks) - 1, 0))
 	var fullLength Millis = 0
 	var finishedLength Millis = 0
 	var renderedLength Millis = 0
 	for i, chunk := range context.chunks {
 		if i < len(context.chunks) - 1 {
-			fmt.Printf("%s: %s: %s\n", chunk.Loc, millisToTs(fullLength + chunk.Duration()), fmt.Sprintf("cut-%02d.mp4", i))
+			fmt.Printf("%s: %s (Timestamp: %s)\n", chunk.Loc, millisToTs(fullLength + chunk.Duration()), fmt.Sprintf("cut-%02d.mp4", i))
 		}
 		fullLength += chunk.Duration()
 		if !chunk.Unfinished {
@@ -167,14 +193,18 @@ func (context EvalContext) PrintSummary() {
 		}
 	}
 	fmt.Println()
-	fmt.Println("Chapters:")
+	// TODO: Mark the chunks the are already rendered
+	fmt.Printf(">>> Chunks (%d):\n", len(context.chunks))
+	for _, chunk := range context.chunks {
+		fmt.Printf("%s: %s (Duration: %s)\n", chunk.Loc, chunk.Name(), millisToTs(chunk.Duration()))
+	}
+	fmt.Println()
+	fmt.Printf(">>> Chapters (%d):\n", len(context.chapters))
 	for _, chapter := range context.chapters {
 		fmt.Printf("- %s - %s\n", millisToTs(chapter.Timestamp), chapter.Label)
 	}
 	fmt.Println()
-	fmt.Printf("Chunks Count: %d\n", len(context.chunks))
-	fmt.Printf("Cuts Count: %d\n", len(context.chunks) - 1)
-	fmt.Println()
+	fmt.Printf(">>> Length:\n")
 	fmt.Printf("Rendered Length: %s\n", millisToTs(renderedLength))
 	fmt.Printf("Finished Length: %s\n", millisToTs(finishedLength))
 	fmt.Printf("Full Length:     %s\n", millisToTs(fullLength))
@@ -275,15 +305,10 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, er
 	return compressChatLog(chatLog), nil
 }
 
-func (context *EvalContext) evalMarkutFile(path string) bool {
-	content, err := ioutil.ReadFile(path)
-	if err != nil {
-		fmt.Printf("ERROR: could not read file %s: %s\n", path, err)
-		return false
-	}
-
-	lexer := NewLexer(string(content), path)
+func (context *EvalContext) evalMarkutContent(content string, path string) bool {
+	lexer := NewLexer(content, path)
 	token := Token{}
+	var err error
 	for {
 		token, err = lexer.Next()
 		if err != nil {
@@ -342,6 +367,16 @@ func (context *EvalContext) evalMarkutFile(path string) bool {
 	}
 
 	return true
+}
+
+func (context *EvalContext) evalMarkutFile(path string) bool {
+	content, err := ioutil.ReadFile(path)
+	if err != nil {
+		fmt.Printf("ERROR: could not read file %s: %s\n", path, err)
+		return false
+	}
+
+	return context.evalMarkutContent(string(content), path)
 }
 
 func (context *EvalContext) finishEval() bool {
@@ -585,8 +620,8 @@ var Subcommands = map[string]Subcommand{
 				return false
 			}
 
-			context := defaultContext()
-			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			context, ok := defaultContext()
+			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -662,8 +697,8 @@ var Subcommands = map[string]Subcommand{
 				return false
 			}
 
-			context := defaultContext();
-			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			context, ok := defaultContext();
+			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -701,8 +736,8 @@ var Subcommands = map[string]Subcommand{
 				return false
 			}
 
-			context := defaultContext()
-			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			context, ok := defaultContext()
+			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -749,8 +784,8 @@ var Subcommands = map[string]Subcommand{
 				return false
 			}
 
-			context := defaultContext();
-			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			context, ok := defaultContext();
+			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -777,8 +812,8 @@ var Subcommands = map[string]Subcommand{
 				return false
 			}
 
-			context := defaultContext()
-			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			context, ok := defaultContext()
+			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -827,8 +862,8 @@ var Subcommands = map[string]Subcommand{
 				return false
 			}
 
-			context := defaultContext();
-			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			context, ok := defaultContext();
+			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -883,8 +918,8 @@ var Subcommands = map[string]Subcommand{
 				// This kind of crappy modification checking needs at least some sort of atomicity.
 				// rsync(1) is as atomic as rename(2). So it's alright for majority of the cases.
 
-				context := defaultContext();
-				ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+				context, ok := defaultContext();
+				ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
 				if !ok {
 					return false
 				}
@@ -915,8 +950,8 @@ var Subcommands = map[string]Subcommand{
 				time.Sleep(1 * time.Second)
 			}
 
-			context := defaultContext()
-			ok := context.evalMarkutFile(*markutPtr) && context.finishEval()
+			context, ok := defaultContext()
+			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
 			if !ok {
 				return false
 			}
