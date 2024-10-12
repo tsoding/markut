@@ -123,10 +123,10 @@ type EvalContext struct {
 	chapStack []Chapter
 	chapOffset Millis
 
-	VideoCodec string
-	VideoBitrate string
-	AudioCodec string
-	AudioBitrate string
+	VideoCodec *Token
+	VideoBitrate *Token
+	AudioCodec *Token
+	AudioBitrate *Token
 
 	ExtraOutFlags []string
 	ExtraInFlags []string
@@ -141,11 +141,6 @@ const (
 
 func defaultContext() (EvalContext, bool) {
 	context := EvalContext{
-		// Default chunk transcoding parameters
-		VideoCodec: DefaultVideoCodec,
-		VideoBitrate: DefaultVideoBitrate,
-		AudioCodec: DefaultAudioCodec,
-		AudioBitrate: DefaultAudioBitrate,
 		outputPath: "output.mp4",
 	}
 
@@ -167,14 +162,28 @@ func defaultContext() (EvalContext, bool) {
 }
 
 func (context EvalContext) PrintSummary() {
-	// TODO: Print where the Main Output Parameters were defined
-	//   In case they were defined in ~/.markut for instance
 	// TODO: Print Extra Input and Output parameters and where they were defined
 	fmt.Printf(">>> Main Output Parameters:\n")
-	fmt.Printf("Video Codec:   %s\n", context.VideoCodec);
-	fmt.Printf("Video Bitrate: %s\n", context.VideoBitrate);
-	fmt.Printf("Audio Codec:   %s\n", context.AudioCodec);
-	fmt.Printf("Audio Bitrate: %s\n", context.AudioBitrate);
+	if context.VideoCodec != nil {
+		fmt.Printf("Video Codec:   %s (Defined at %s)\n", string(context.VideoCodec.Text), context.VideoCodec.Loc);
+	} else {
+		fmt.Printf("Video Codec:   %s (Default)\n", DefaultVideoCodec);
+	}
+	if context.VideoBitrate != nil {
+		fmt.Printf("Video Bitrate: %s (Defined at %s)\n", string(context.VideoBitrate.Text), context.VideoBitrate.Loc);
+	} else {
+		fmt.Printf("Video Bitrate: %s (Default)\n", DefaultVideoBitrate);
+	}
+	if context.AudioCodec != nil {
+		fmt.Printf("Audio Codec:   %s (Defined at %s)\n", string(context.AudioCodec.Text), context.AudioCodec.Loc);
+	} else {
+		fmt.Printf("Audio Codec:   %s (Default)\n", DefaultAudioCodec);
+	}
+	if context.AudioBitrate != nil {
+		fmt.Printf("Audio Bitrate: %s (Defined at %s)\n", string(context.AudioBitrate.Text), context.AudioBitrate.Loc);
+	} else {
+		fmt.Printf("Audio Bitrate: %s (Default)\n", DefaultAudioBitrate);
+	}
 	fmt.Println()
 	fmt.Printf(">>> Cuts (%d):\n", max(len(context.chunks) - 1, 0))
 	var fullLength Millis = 0
@@ -464,17 +473,25 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
 	}
 	args = append(args, "-i", chunk.InputPath)
 
-	if len(context.VideoCodec) > 0 {
-		args = append(args, "-c:v", context.VideoCodec)
+	if context.VideoCodec != nil {
+		args = append(args, "-c:v", string(context.VideoCodec.Text))
+	} else {
+		args = append(args, "-c:v", DefaultVideoCodec)
 	}
-	if len(context.VideoBitrate) > 0 {
-		args = append(args, "-vb", context.VideoBitrate)
+	if context.VideoBitrate != nil {
+		args = append(args, "-vb", string(context.VideoBitrate.Text))
+	} else {
+		args = append(args, "-vb", DefaultVideoBitrate)
 	}
-	if len(context.AudioCodec) > 0 {
-		args = append(args, "-c:a", context.AudioCodec)
+	if context.AudioCodec != nil {
+		args = append(args, "-c:a", string(context.AudioCodec.Text))
+	} else {
+		args = append(args, "-c:a", DefaultAudioCodec)
 	}
-	if len(context.AudioBitrate) > 0 {
-		args = append(args, "-ab", context.AudioBitrate)
+	if context.AudioBitrate != nil {
+		args = append(args, "-ab", string(context.AudioBitrate.Text))
+	} else {
+		args = append(args, "-ab", DefaultAudioBitrate)
 	}
 	args = append(args, "-t", millisToSecsForFFmpeg(chunk.Duration()))
 	if chunk.Blur {
@@ -1237,7 +1254,7 @@ func main() {
 					fmt.Printf("%s\n", err)
 					return false
 				}
-				context.VideoCodec = string(args[0].Text)
+				context.VideoCodec = &args[0]
 				return true;
 			},
 		},
@@ -1252,7 +1269,7 @@ func main() {
 					fmt.Printf("%s\n", err)
 					return false
 				}
-				context.VideoBitrate = string(args[0].Text)
+				context.VideoBitrate = &args[0]
 				return true;
 			},
 		},
@@ -1267,7 +1284,7 @@ func main() {
 					fmt.Printf("%s\n", err)
 					return false
 				}
-				context.AudioCodec = string(args[0].Text)
+				context.AudioCodec = &args[0]
 				return true;
 			},
 		},
@@ -1282,7 +1299,7 @@ func main() {
 					fmt.Printf("%s\n", err)
 					return false
 				}
-				context.AudioBitrate = string(args[0].Text)
+				context.AudioBitrate = &args[0]
 				return true;
 			},
 		},
