@@ -155,7 +155,7 @@ func defaultContext() (EvalContext, bool) {
 		if err != nil {
 			if os.IsNotExist(err) {
 				return context, true;
-			} 
+			}
 			fmt.Printf("ERROR: Could not open %s to read as a config: %s\n", path, err);
 			return context, false;
 		}
@@ -405,6 +405,7 @@ func (context *EvalContext) finishEval() bool {
 
 func ffmpegPathToBin() (ffmpegPath string) {
 	ffmpegPath = "ffmpeg"
+	// TODO: replace FFMPEG_PREFIX envar in favor of a func `ffmpeg_prefix` that you have to call in $HOME/.markut
 	ffmpegPrefix, ok := os.LookupEnv("FFMPEG_PREFIX")
 	if ok {
 		ffmpegPath = path.Join(ffmpegPrefix, "bin", "ffmpeg")
