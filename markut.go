@@ -1030,6 +1030,8 @@ func usage() {
 	}
 	fmt.Printf("ENVARS:\n")
 	fmt.Printf("    FFMPEG_PREFIX      Prefix path for a custom ffmpeg distribution\n")
+	fmt.Printf("FILES:\n")
+	fmt.Printf("    $HOME/.markut      File that is always evaluated automatically before the MARKUT file\n");
 }
 
 func main() {
