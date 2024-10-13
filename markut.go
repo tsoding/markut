@@ -78,6 +78,19 @@ func (chunk Chunk) Duration() Millis {
 	return chunk.End - chunk.Start
 }
 
+func (chunk Chunk) Rendered() (bool, error) {
+	_, err := os.Stat(chunk.Name())
+	if err == nil {
+		return true, nil
+	}
+
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+
+	return false, err
+}
+
 type Chapter struct {
 	Loc Loc
 	Timestamp Millis
@@ -167,7 +180,7 @@ func defaultContext() (EvalContext, bool) {
 	return context, true;
 }
 
-func (context EvalContext) PrintSummary() {
+func (context EvalContext) PrintSummary() error {
 	// TODO: Print Extra Input and Output parameters and where they were defined
 	fmt.Printf(">>> Main Output Parameters:\n")
 	if context.VideoCodec != nil {
@@ -197,7 +210,7 @@ func (context EvalContext) PrintSummary() {
 	var renderedLength Millis = 0
 	for i, chunk := range context.chunks {
 		if i < len(context.chunks) - 1 {
-			fmt.Printf("%s: %s (Timestamp: %s)\n", chunk.Loc, millisToTs(fullLength + chunk.Duration()), fmt.Sprintf("cut-%02d.mp4", i))
+			fmt.Printf("%s: Cut %d - %s\n", chunk.Loc, i, millisToTs(fullLength + chunk.Duration()))
 		}
 		fullLength += chunk.Duration()
 		if !chunk.Unfinished {
@@ -208,10 +221,17 @@ func (context EvalContext) PrintSummary() {
 		}
 	}
 	fmt.Println()
-	// TODO: Mark the chunks the are already rendered
 	fmt.Printf(">>> Chunks (%d):\n", len(context.chunks))
-	for _, chunk := range context.chunks {
-		fmt.Printf("%s: %s (Duration: %s)\n", chunk.Loc, chunk.Name(), millisToTs(chunk.Duration()))
+	for index, chunk := range context.chunks {
+		rendered, err := chunk.Rendered();
+		if err != nil {
+			return nil
+		}
+		checkMark := "[ ]"
+		if rendered {
+			checkMark = "[x]"
+		}
+		fmt.Printf("%s: %s Chunk %d - %s -> %s (Duration: %s)\n", chunk.Loc, checkMark, index, millisToTs(chunk.Start), millisToTs(chunk.End), millisToTs(chunk.Duration()))
 	}
 	fmt.Println()
 	fmt.Printf(">>> Chapters (%d):\n", len(context.chapters))
@@ -223,6 +243,7 @@ func (context EvalContext) PrintSummary() {
 	fmt.Printf("Rendered Length: %s\n", millisToTs(renderedLength))
 	fmt.Printf("Finished Length: %s\n", millisToTs(finishedLength))
 	fmt.Printf("Full Length:     %s\n", millisToTs(fullLength))
+	return nil
 }
 
 func (context EvalContext) containsChunkWithName(filePath string) bool {
@@ -447,14 +468,14 @@ func millisToSecsForFFmpeg(millis Millis) string {
 }
 
 func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
-	_, err := os.Stat(chunk.Name())
-	if err == nil {
-		fmt.Printf("INFO: %s is already rendered\n", chunk.Name());
-		return nil;
+	rendered, err := chunk.Rendered();
+	if err != nil {
+		return err;
 	}
 
-	if !errors.Is(err, os.ErrNotExist) {
-		return err
+	if rendered {
+		fmt.Printf("INFO: %s is already rendered\n", chunk.Name());
+		return nil;
 	}
 
 	err = os.MkdirAll(ChunksFolder, 0755)
@@ -786,7 +807,11 @@ var Subcommands = map[string]Subcommand{
 				return false
 			}
 
-			context.PrintSummary()
+			err = context.PrintSummary()
+			if err != nil {
+				fmt.Printf("ERROR: Could not print summary: %s\n", err);
+				return false
+			}
 
 			return true
 		},
@@ -814,7 +839,11 @@ var Subcommands = map[string]Subcommand{
 				return false
 			}
 
-			context.PrintSummary()
+			err = context.PrintSummary()
+			if err != nil {
+				fmt.Printf("ERROR: Could not print summary: %s\n", err)
+				return false
+			}
 
 			return true
 		},
@@ -996,7 +1025,11 @@ var Subcommands = map[string]Subcommand{
 				}
 			}
 
-			context.PrintSummary()
+			err = context.PrintSummary()
+			if err != nil {
+				fmt.Printf("ERROR: Could not print summary: %s\n", err);
+				return false
+			}
 
 			return true
 		},
