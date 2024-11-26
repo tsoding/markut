@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"strconv"
 	"sort"
+	"regexp"
 )
 
 func decomposeMillis(millis Millis) (hh int64, mm int64, ss int64, ms int64, sign string) {
@@ -132,6 +133,7 @@ type Cut struct {
 
 type EvalContext struct {
 	inputPath string
+	inputPathHistory []Token
 	outputPath string
 	chatLog []ChatMessage
 	chunks []Chunk
@@ -848,7 +850,7 @@ var Subcommands = map[string]Subcommand{
 			return true
 		},
 	},
-	"chat": 	{
+	"chat":	{
 		Description: "Generate chat captions",
 		Run: func (name string, args []string) bool {
 			chatFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -898,7 +900,7 @@ var Subcommands = map[string]Subcommand{
 			return true
 		},
 	},
-	"prune": 	{
+	"prune": {
 		Description: "Prune unused chunks",
 		Run: func (name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -947,7 +949,7 @@ var Subcommands = map[string]Subcommand{
 		},
 	},
 	// TODO: Maybe watch mode should just be a flag for the `final` subcommand
-	"watch": 	{
+	"watch": {
 		Description: "Render finished chunks in watch mode every time MARKUT file is modified",
 		Run: func (name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -1070,6 +1072,44 @@ var Subcommands = map[string]Subcommand{
 				}
 			}
 			return true;
+		},
+	},
+	"tcd": {
+		Description: "Generate twitchchatdownloader.com links for all the inputs downloaded from Twitch",
+		Run: func (commandName string, args []string) bool {
+			subFlag := flag.NewFlagSet(commandName, flag.ContinueOnError)
+			markutPtr := subFlag.String("markut", "MARKUT", "Path to the MARKUT file")
+
+			err := subFlag.Parse(args)
+
+			if err == flag.ErrHelp {
+				return true
+			}
+
+			if err != nil {
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				return false
+			}
+
+			context, ok := defaultContext();
+			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
+			if !ok {
+				return false
+			}
+
+			TwitchVodFileRegexp := "([0-9]+)-[0-9a-f\\-]+\\.mp4"
+			fmt.Printf("Using regexp %s to detect VODs downloaded from Twitch\n", TwitchVodFileRegexp)
+			re := regexp.MustCompile(TwitchVodFileRegexp)
+			for _, inputPath := range context.inputPathHistory {
+				match := re.FindStringSubmatch(string(inputPath.Text))
+				if len(match) > 0 {
+					fmt.Printf("%s: https://www.twitchchatdownloader.com/video/%s\n", inputPath.Loc, match[1])
+				} else {
+					fmt.Printf("%s: NO MATCH\n", inputPath.Loc)
+				}
+			}
+
+			return ok
 		},
 	},
 }
@@ -1422,6 +1462,7 @@ func main() {
 					return false
 				}
 				context.inputPath = string(path.Text)
+				context.inputPathHistory = append(context.inputPathHistory, path)
 				return true
 			},
 		},
