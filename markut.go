@@ -133,7 +133,7 @@ type Cut struct {
 
 type EvalContext struct {
 	inputPath string
-	inputPathHistory []Token
+	inputPathLog []Token
 	outputPath string
 	chatLog []ChatMessage
 	chunks []Chunk
@@ -206,6 +206,18 @@ func (context EvalContext) PrintSummary() error {
 		fmt.Printf("Audio Bitrate: %s (Default)\n", DefaultAudioBitrate);
 	}
 	fmt.Println()
+	TwitchVodFileRegexp := "([0-9]+)-[0-9a-f\\-]+\\.mp4"
+	re := regexp.MustCompile(TwitchVodFileRegexp)
+	fmt.Printf(">>> Twitch Chat Logs (Detected by regex `%s`)\n", TwitchVodFileRegexp)
+	for _, inputPath := range context.inputPathLog {
+		match := re.FindStringSubmatch(string(inputPath.Text))
+		if len(match) > 0 {
+			fmt.Printf("%s: https://www.twitchchatdownloader.com/video/%s\n", inputPath.Loc, match[1])
+		} else {
+			fmt.Printf("%s: NO MATCH\n", inputPath.Loc)
+		}
+	}
+	fmt.Println()
 	fmt.Printf(">>> Cuts (%d):\n", max(len(context.chunks) - 1, 0))
 	var fullLength Millis = 0
 	var finishedLength Millis = 0
@@ -236,7 +248,7 @@ func (context EvalContext) PrintSummary() error {
 		fmt.Printf("%s: %s Chunk %d - %s -> %s (Duration: %s)\n", chunk.Loc, checkMark, index, millisToTs(chunk.Start), millisToTs(chunk.End), millisToTs(chunk.Duration()))
 	}
 	fmt.Println()
-	fmt.Printf(">>> Chapters (%d):\n", len(context.chapters))
+	fmt.Printf(">>> YouTube Chapters (%d):\n", len(context.chapters))
 	for _, chapter := range context.chapters {
 		fmt.Printf("- %s - %s\n", millisToYouTubeTs(chapter.Timestamp), chapter.Label)
 	}
@@ -651,7 +663,7 @@ var Subcommands = map[string]Subcommand{
 			return true
 		},
 	},
-	"cut": 	{
+	"cut": {
 		Description: "Render specific cut of the final video",
 		Run: func (name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -726,7 +738,7 @@ var Subcommands = map[string]Subcommand{
 			return true
 		},
 	},
-	"chunk": 	{
+	"chunk": {
 		Description: "Render specific chunk of the final video",
 		Run: func (name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -767,7 +779,7 @@ var Subcommands = map[string]Subcommand{
 			return true
 		},
 	},
-	"final": 	{
+	"final": {
 		Description: "Render the final video",
 		Run: func (name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -818,7 +830,7 @@ var Subcommands = map[string]Subcommand{
 			return true
 		},
 	},
-	"summary": 	{
+	"summary": {
 		Description: "Print the summary of the video",
 		Run: func (name string, args []string) bool {
 			summFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -850,7 +862,7 @@ var Subcommands = map[string]Subcommand{
 			return true
 		},
 	},
-	"chat":	{
+	"chat": {
 		Description: "Generate chat captions",
 		Run: func (name string, args []string) bool {
 			chatFlag := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -1072,44 +1084,6 @@ var Subcommands = map[string]Subcommand{
 				}
 			}
 			return true;
-		},
-	},
-	"tcd": {
-		Description: "Generate twitchchatdownloader.com links for all the inputs downloaded from Twitch",
-		Run: func (commandName string, args []string) bool {
-			subFlag := flag.NewFlagSet(commandName, flag.ContinueOnError)
-			markutPtr := subFlag.String("markut", "MARKUT", "Path to the MARKUT file")
-
-			err := subFlag.Parse(args)
-
-			if err == flag.ErrHelp {
-				return true
-			}
-
-			if err != nil {
-				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
-				return false
-			}
-
-			context, ok := defaultContext();
-			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
-			if !ok {
-				return false
-			}
-
-			TwitchVodFileRegexp := "([0-9]+)-[0-9a-f\\-]+\\.mp4"
-			fmt.Printf("Using regexp %s to detect VODs downloaded from Twitch\n", TwitchVodFileRegexp)
-			re := regexp.MustCompile(TwitchVodFileRegexp)
-			for _, inputPath := range context.inputPathHistory {
-				match := re.FindStringSubmatch(string(inputPath.Text))
-				if len(match) > 0 {
-					fmt.Printf("%s: https://www.twitchchatdownloader.com/video/%s\n", inputPath.Loc, match[1])
-				} else {
-					fmt.Printf("%s: NO MATCH\n", inputPath.Loc)
-				}
-			}
-
-			return ok
 		},
 	},
 }
@@ -1462,7 +1436,7 @@ func main() {
 					return false
 				}
 				context.inputPath = string(path.Text)
-				context.inputPathHistory = append(context.inputPathHistory, path)
+				context.inputPathLog = append(context.inputPathLog, path)
 				return true
 			},
 		},
@@ -1540,3 +1514,10 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+// TODO: Consider getting rid of the dependency on https://www.twitchchatdownloader.com/
+//   Maybe implementing our own Twitch Chat Downloader that could integrate with Markut itself.
+// TODO: Consider rewritting Markut in C with nob.h
+//   There is no reason for it to be written in go at this point. C+nob.h can do all the tricks.
+//   For the lexing part we can even use alexer.
+// TODO: Embed git hash into the executable and display it on `markut version`
