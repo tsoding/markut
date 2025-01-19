@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"sort"
 	"regexp"
+	"slices"
 )
 
 func decomposeMillis(millis Millis) (hh int64, mm int64, ss int64, ms int64, sign string) {
@@ -419,11 +420,21 @@ func (context *EvalContext) evalMarkutContent(content string, path string) bool 
 	return true
 }
 
-func (context *EvalContext) evalMarkutFile(path string) bool {
+func (context *EvalContext) evalMarkutFile(loc *Loc, path string, ignoreIfMissing bool) bool {
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
-		fmt.Printf("ERROR: could not read file %s: %s\n", path, err)
-		return false
+		sb := strings.Builder{}
+		if loc != nil {
+			sb.WriteString(fmt.Sprintf("%s: ", *loc));
+		}
+		if ignoreIfMissing {
+			sb.WriteString("WARNING: ")
+		} else {
+			sb.WriteString("ERROR: ")
+		}
+		sb.WriteString(fmt.Sprintf("%s", err))
+		fmt.Printf("%s\n", sb.String())
+		return ignoreIfMissing
 	}
 
 	return context.evalMarkutContent(string(content), path)
@@ -680,7 +691,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			context, ok := defaultContext()
-			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
+			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -757,7 +768,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			context, ok := defaultContext();
-			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
+			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -796,7 +807,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			context, ok := defaultContext()
-			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
+			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -848,7 +859,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			context, ok := defaultContext();
-			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
+			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -880,7 +891,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			context, ok := defaultContext()
-			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
+			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -930,7 +941,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			context, ok := defaultContext();
-			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
+			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -986,7 +997,7 @@ var Subcommands = map[string]Subcommand{
 				// rsync(1) is as atomic as rename(2). So it's alright for majority of the cases.
 
 				context, ok := defaultContext();
-				ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
+				ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
 				if !ok {
 					return false
 				}
@@ -1018,7 +1029,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			context, ok := defaultContext()
-			ok = ok && context.evalMarkutFile(*markutPtr) && context.finishEval()
+			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
 			if !ok {
 				return false
 			}
@@ -1483,7 +1494,7 @@ func main() {
 			},
 		},
 		"include": {
-			Description: "Include another MARKUT file",
+			Description: "Include another MARKUT file and fail if it does not exist.",
 			Category: "Misc",
 			Signature: "<path:String> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
@@ -1494,9 +1505,53 @@ func main() {
 					return false
 				}
 				path := args[0]
-				if !context.evalMarkutFile(string(path.Text)) {
+				return context.evalMarkutFile(&path.Loc, string(path.Text), false)
+			},
+		},
+		"include_if_exists": {
+			Description: "Try to include another MARKUT file but do not fail if it does not exist.",
+			Category: "Misc",
+			Signature: "<path:String> --",
+			Run: func(context *EvalContext, command string, token Token) bool {
+				args, err := context.typeCheckArgs(token.Loc, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
 					return false
 				}
+				path := args[0]
+				return context.evalMarkutFile(&path.Loc, string(path.Text), true)
+			},
+		},
+		"home": {
+			Description: "Path to the home folder.",
+			Category: "Misc",
+			Signature: "-- <path:String>",
+			Run: func(context *EvalContext, command string, token Token) bool {
+				context.argsStack = append(context.argsStack, Token{
+					Kind: TokenString,
+					Text: []rune(os.Getenv("HOME")),
+					Loc: token.Loc,
+				})
+				return true
+			},
+		},
+		"concat": {
+			Description: "Concatenate two strings.",
+			Category: "Misc",
+			Signature: "<a:String> <b:String> -- <a++b:String>",
+			Run: func(context *EvalContext, command string, token Token) bool {
+				args, err := context.typeCheckArgs(token.Loc, TokenString, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					return false
+				}
+				context.argsStack = append(context.argsStack, Token{
+					Kind: TokenString,
+					Text: slices.Concat(args[1].Text, args[0].Text),
+					Loc: token.Loc,
+				});
 				return true
 			},
 		},
