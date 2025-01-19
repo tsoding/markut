@@ -1389,7 +1389,7 @@ func main() {
 			},
 		},
 		"over": {
-			Description: "Copy the argument below the top fo the stack on top",
+			Description: "Copy the argument below the top of the stack on top",
 			Signature: "<a:Type1> <b:Type2> -- <a:Type1> <b:Type2> <a:Type1>",
 			Category: "Stack",
 			Run: func(context *EvalContext, command string, token Token) bool {
