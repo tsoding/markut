@@ -14,6 +14,8 @@ import (
 	"sort"
 	"regexp"
 	"slices"
+	"net/http"
+	"encoding/json"
 )
 
 func decomposeMillis(millis Millis) (hh int64, mm int64, ss int64, ms int64, sign string) {
@@ -1095,6 +1097,119 @@ var Subcommands = map[string]Subcommand{
 				}
 			}
 			return true;
+		},
+	},
+	"twitch-chat-download": {
+		Description: "Download Twitch Chat of a VOD and print it in the stupid format https://twitchchatdownloader.com/ uses to maintain compatibility with our existing chat parser",
+		Run: func (commandName string, args []string) bool {
+			subFlag := flag.NewFlagSet(commandName, flag.ContinueOnError)
+			videoIdPtr := subFlag.String("videoID", "", "Video ID of the Twitch VOD to download")
+
+			err := subFlag.Parse(args)
+
+			if err == flag.ErrHelp {
+				return true
+			}
+
+			if err != nil {
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				return false
+			}
+
+			if (*videoIdPtr == "") {
+				subFlag.Usage()
+				fmt.Printf("ERROR: No -videoID is provided\n")
+				return false
+			}
+
+			client := &http.Client{}
+
+			queryMessagesByOffset := func(videoId, gqlCursorId string) (string, bool) {
+				// twitchClientId := "kimne78kx3ncx6brgo4mv6wki5h1ko" // This is the Client ID of the Twitch Web App itself
+				twitchClientId := "kd1unb4b3q4t58fwlpcbzcbnm76a8fp" // https://github.com/ihabunek/twitch-dl/issues/124#issuecomment-1537030937
+				gqlUrl := "https://gql.twitch.tv/gql"
+				var body string
+				if gqlCursorId == "" {
+					body = fmt.Sprintf("[{\"operationName\":\"VideoCommentsByOffsetOrCursor\",\"variables\":{\"videoID\":\"%s\",\"contentOffsetSeconds\":0},\"extensions\":{\"persistedQuery\":{\"version\":1,\"sha256Hash\":\"b70a3591ff0f4e0313d126c6a1502d79a1c02baebb288227c582044aa76adf6a\"}}}]", videoId)
+				} else {
+					body = fmt.Sprintf("[{\"operationName\":\"VideoCommentsByOffsetOrCursor\",\"variables\":{\"videoID\":\"%s\",\"cursor\":\"%s\"},\"extensions\":{\"persistedQuery\":{\"version\":1,\"sha256Hash\":\"b70a3591ff0f4e0313d126c6a1502d79a1c02baebb288227c582044aa76adf6a\"}}}]", videoId, gqlCursorId)
+				}
+				req, err := http.NewRequest("POST", gqlUrl, strings.NewReader(body))
+				if err != nil {
+					fmt.Printf("ERROR: could not create request for url %s: %s\n", gqlUrl, err)
+					return "", false
+				}
+				req.Header.Add("Client-Id", twitchClientId)
+				resp, err := client.Do(req)
+				if err != nil {
+					fmt.Printf("ERROR: could not perform POST request to %s: %s\n", gqlUrl, err)
+					return "", false
+				}
+				defer resp.Body.Close()
+
+				var root interface{}
+				decoder := json.NewDecoder(resp.Body)
+				decoder.Decode(&root)
+
+				type Object = map[string]interface{}
+				type Array = []interface{}
+
+				cursor := root
+				cursor = cursor.(Array)[0]
+				cursor = cursor.(Object)["data"]
+				cursor = cursor.(Object)["video"]
+				cursor = cursor.(Object)["comments"]
+				cursor = cursor.(Object)["edges"]
+				edges := cursor.(Array)
+				for _, edge := range edges {
+					sb := strings.Builder{}
+
+					cursor = edge
+					cursor = cursor.(Object)["cursor"]
+					gqlCursorId = cursor.(string)
+
+					cursor = edge
+					cursor = cursor.(Object)["node"]
+					cursor = cursor.(Object)["contentOffsetSeconds"]
+					sb.WriteString(fmt.Sprintf("%d,", int(cursor.(float64))))
+
+					cursor = edge
+					cursor = cursor.(Object)["node"]
+					cursor = cursor.(Object)["commenter"]
+					cursor = cursor.(Object)["login"]
+					sb.WriteString(fmt.Sprintf("%s,", cursor.(string)))
+
+					// cursor = edge
+					// cursor = cursor.(Object)["node"]
+					// cursor = cursor.(Object)["message"]
+					// cursor = cursor.(Object)["userColor"]
+					sb.WriteString(fmt.Sprintf("#FF0000,")) // We don't need the color, but https://twitchchatdownloader.com/ prints it so our parser expects it
+
+					cursor = edge
+					cursor = cursor.(Object)["node"]
+					cursor = cursor.(Object)["message"]
+					cursor = cursor.(Object)["fragments"]
+					fragments := cursor.(Array)
+					for _, fragment := range fragments {
+						cursor = fragment.(Object)["text"]
+						sb.WriteString(fmt.Sprintf("\"%s\"", cursor.(string)))
+					}
+					fmt.Println(sb.String())
+				}
+				return gqlCursorId, true
+			}
+
+			gqlCursorId, ok := queryMessagesByOffset(*videoIdPtr, "")
+			if !ok {
+				return false
+			}
+			for gqlCursorId != "" {
+				gqlCursorId, ok = queryMessagesByOffset(*videoIdPtr, gqlCursorId)
+				if !ok {
+					return false
+				}
+			}
+			return true
 		},
 	},
 }
