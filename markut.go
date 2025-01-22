@@ -1162,8 +1162,6 @@ var Subcommands = map[string]Subcommand{
 				cursor = cursor.(Object)["edges"]
 				edges := cursor.(Array)
 				for _, edge := range edges {
-					sb := strings.Builder{}
-
 					cursor = edge
 					cursor = cursor.(Object)["cursor"]
 					gqlCursorId = cursor.(string)
@@ -1171,30 +1169,31 @@ var Subcommands = map[string]Subcommand{
 					cursor = edge
 					cursor = cursor.(Object)["node"]
 					cursor = cursor.(Object)["contentOffsetSeconds"]
-					sb.WriteString(fmt.Sprintf("%d,", int(cursor.(float64))))
+					fmt.Printf("%d,", int(cursor.(float64)))
 
 					cursor = edge
 					cursor = cursor.(Object)["node"]
 					cursor = cursor.(Object)["commenter"]
 					cursor = cursor.(Object)["login"]
-					sb.WriteString(fmt.Sprintf("%s,", cursor.(string)))
+					fmt.Printf("%s,", cursor.(string))
 
 					// cursor = edge
 					// cursor = cursor.(Object)["node"]
 					// cursor = cursor.(Object)["message"]
 					// cursor = cursor.(Object)["userColor"]
-					sb.WriteString(fmt.Sprintf("#FF0000,")) // We don't need the color, but https://twitchchatdownloader.com/ prints it so our parser expects it
+					fmt.Printf("#FF0000,") // We don't need the color, but https://twitchchatdownloader.com/ prints it so our parser expects it
 
 					cursor = edge
 					cursor = cursor.(Object)["node"]
 					cursor = cursor.(Object)["message"]
 					cursor = cursor.(Object)["fragments"]
 					fragments := cursor.(Array)
+					sb := strings.Builder{}
 					for _, fragment := range fragments {
 						cursor = fragment.(Object)["text"]
-						sb.WriteString(fmt.Sprintf("\"%s\"", cursor.(string)))
+						sb.WriteString(cursor.(string))
 					}
-					fmt.Println(sb.String())
+					fmt.Printf("\"%s\"\n", sb.String())
 				}
 				return gqlCursorId, true
 			}
