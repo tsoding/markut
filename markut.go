@@ -1684,9 +1684,7 @@ func main() {
 	}
 }
 
-// TODO: Consider getting rid of the dependency on https://www.twitchchatdownloader.com/
-//   Maybe implementing our own Twitch Chat Downloader that could integrate with Markut itself.
 // TODO: Consider rewritting Markut in C with nob.h
 //   There is no reason for it to be written in go at this point. C+nob.h can do all the tricks.
-//   For the lexing part we can even use alexer.
+//   For the lexing part we can even use https://github.com/tsoding/alexer
 // TODO: Embed git hash into the executable and display it on `markut version`
