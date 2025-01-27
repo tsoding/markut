@@ -1174,8 +1174,13 @@ var Subcommands = map[string]Subcommand{
 					cursor = edge
 					cursor = cursor.(Object)["node"]
 					cursor = cursor.(Object)["commenter"]
-					cursor = cursor.(Object)["login"]
-					fmt.Printf("%s,", cursor.(string))
+					if cursor != nil {
+						cursor = cursor.(Object)["login"]
+						fmt.Printf("%s,", cursor.(string))
+					} else {
+						// Apparent this may happen if the account got deleted after the stream
+						fmt.Printf("<DELETED>,")
+					}
 
 					// cursor = edge
 					// cursor = cursor.(Object)["node"]
