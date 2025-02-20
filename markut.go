@@ -152,8 +152,8 @@ type EvalContext struct {
 	AudioCodec *Token
 	AudioBitrate *Token
 
-	ExtraOutFlags []string
-	ExtraInFlags []string
+	ExtraOutFlags []Token
+	ExtraInFlags []Token
 }
 
 const (
@@ -186,7 +186,6 @@ func defaultContext() (EvalContext, bool) {
 }
 
 func (context EvalContext) PrintSummary() error {
-	// TODO: Print Extra Input and Output parameters and where they were defined
 	fmt.Printf(">>> Main Output Parameters:\n")
 	if context.VideoCodec != nil {
 		fmt.Printf("Video Codec:   %s (Defined at %s)\n", string(context.VideoCodec.Text), context.VideoCodec.Loc);
@@ -209,6 +208,21 @@ func (context EvalContext) PrintSummary() error {
 		fmt.Printf("Audio Bitrate: %s (Default)\n", DefaultAudioBitrate);
 	}
 	fmt.Println()
+	// TODO: merge together parameters defined on the same line
+	if len(context.ExtraInFlags) > 0 {
+		fmt.Printf(">>> Extra Input Parameters:\n")
+		for _, inFlag := range context.ExtraInFlags {
+			fmt.Printf("%s: %s\n", inFlag.Loc, string(inFlag.Text));
+		}
+		fmt.Println()
+	}
+	if len(context.ExtraOutFlags) > 0 {
+		fmt.Printf(">>> Extra Output Parameters:\n")
+		for _, outFlag := range context.ExtraOutFlags {
+			fmt.Printf("%s: %s\n", outFlag.Loc, string(outFlag.Text));
+		}
+		fmt.Println()
+	}
 	TwitchVodFileRegexp := "([0-9]+)-[0-9a-f\\-]+\\.mp4"
 	re := regexp.MustCompile(TwitchVodFileRegexp)
 	fmt.Printf(">>> Twitch Chat Logs (Detected by regex `%s`)\n", TwitchVodFileRegexp)
@@ -523,7 +537,7 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
 
 	args = append(args, "-ss", millisToSecsForFFmpeg(chunk.Start))
 	for _, inFlag := range context.ExtraInFlags {
-		args = append(args, inFlag)
+		args = append(args, string(inFlag.Text))
 	}
 	args = append(args, "-i", chunk.InputPath)
 
@@ -552,7 +566,7 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
 		args = append(args, "-vf", "boxblur=50:5")
 	}
 	for _, outFlag := range context.ExtraOutFlags {
-		args = append(args, outFlag)
+		args = append(args, string(outFlag.Text))
 	}
 	unfinishedChunkName := "unfinished-chunk.mp4"
 	args = append(args, unfinishedChunkName)
@@ -1498,7 +1512,7 @@ func main() {
 					return false
 				}
 				outFlag := args[0]
-				context.ExtraOutFlags = append(context.ExtraOutFlags, string(outFlag.Text))
+				context.ExtraOutFlags = append(context.ExtraOutFlags, outFlag)
 				return true;
 			},
 		},
@@ -1514,7 +1528,7 @@ func main() {
 					return false
 				}
 				inFlag := args[0]
-				context.ExtraInFlags = append(context.ExtraInFlags, string(inFlag.Text))
+				context.ExtraInFlags = append(context.ExtraInFlags, inFlag)
 				return true;
 			},
 		},
