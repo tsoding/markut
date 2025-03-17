@@ -1188,19 +1188,38 @@ var Subcommands = map[string]Subcommand{
 					cursor = edge
 					cursor = cursor.(Object)["node"]
 					cursor = cursor.(Object)["commenter"]
+					var commenter string
 					if cursor != nil {
 						cursor = cursor.(Object)["login"]
-						fmt.Printf("%s,", cursor.(string))
+						commenter = cursor.(string)
 					} else {
 						// Apparent this may happen if the account got deleted after the stream
-						fmt.Printf("<DELETED>,")
+						commenter = "<DELETED>"
 					}
+					fmt.Printf("%s,", commenter)
 
-					// cursor = edge
-					// cursor = cursor.(Object)["node"]
-					// cursor = cursor.(Object)["message"]
-					// cursor = cursor.(Object)["userColor"]
-					fmt.Printf("#FF0000,") // We don't need the color, but https://twitchchatdownloader.com/ prints it so our parser expects it
+					cursor = edge
+					cursor = cursor.(Object)["node"]
+					cursor = cursor.(Object)["message"]
+					cursor = cursor.(Object)["userColor"]
+					var color string
+					if cursor != nil {
+						color = cursor.(string);
+					} else {
+						// Taken from https://discuss.dev.twitch.com/t/default-user-color-in-chat/385
+						// I don't know if it's still accurate, but I don't care, we just need some sort of
+						// default color
+						defaultColors := []string{
+							"#FF0000", "#0000FF", "#00FF00",
+							"#B22222", "#FF7F50", "#9ACD32",
+							"#FF4500", "#2E8B57", "#DAA520",
+							"#D2691E", "#5F9EA0", "#1E90FF",
+							"#FF69B4", "#8A2BE2", "#00FF7F",
+						}
+						index := int(commenter[0] + commenter[len(commenter)-1])
+						color = defaultColors[index % len(defaultColors)]
+					}
+					fmt.Printf("%s,", color)
 
 					cursor = edge
 					cursor = cursor.(Object)["node"]
