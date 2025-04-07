@@ -52,7 +52,9 @@ func millisToSubRipTs(millis Millis) string {
 
 type ChatMessage struct {
 	TimeOffset Millis
-	Text string
+	Nickname string
+	Color string
+	Text_ string
 }
 
 type Chunk struct {
@@ -304,6 +306,9 @@ func sliceChatLog(chatLog []ChatMessage, start, end Millis) []ChatMessage {
 }
 
 // IMPORTANT! chatLog is assumed to be sorted by TimeOffset.
+// TODO: chat log compression does not make sense anymore
+//   We need to introduce ChatMessage groups instead of concatinating rendering messages
+/*
 func compressChatLog(chatLog []ChatMessage) []ChatMessage {
 	result := []ChatMessage{}
 	for i := range chatLog {
@@ -315,6 +320,7 @@ func compressChatLog(chatLog []ChatMessage) []ChatMessage {
 	}
 	return result
 }
+*/
 
 type Func struct {
 	Description string
@@ -353,6 +359,7 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, er
 		nickname := pair[0]
 
 		pair = strings.SplitN(pair[1], ",", 2)
+		color := pair[0]
 		text := pair[1]
 
 		if len(text) >= 2 && text[0] == '"' && text[len(text)-1] == '"' {
@@ -361,7 +368,9 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, er
 
 		chatLog = append(chatLog, ChatMessage{
 			TimeOffset: Millis(secs*1000),
-			Text: fmt.Sprintf("[%s] %s", nickname, text),
+			Color: color,
+			Nickname: nickname,
+			Text_: text,
 		})
 	}
 
@@ -369,7 +378,7 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, er
 		return chatLog[i].TimeOffset < chatLog[j].TimeOffset
 	})
 
-	return compressChatLog(chatLog), nil
+	return chatLog, nil
 }
 
 func (context *EvalContext) evalMarkutContent(content string, path string) bool {
@@ -449,7 +458,7 @@ func (context *EvalContext) evalMarkutFile(loc *Loc, path string, ignoreIfMissin
 			sb.WriteString("ERROR: ")
 		}
 		sb.WriteString(fmt.Sprintf("%s", err))
-		fmt.Printf("%s\n", sb.String())
+		fmt.Fprintf(os.Stderr, "%s\n", sb.String())
 		return ignoreIfMissing
 	}
 
@@ -894,6 +903,7 @@ var Subcommands = map[string]Subcommand{
 		Run: func (name string, args []string) bool {
 			chatFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := chatFlag.String("markut", "MARKUT", "Path to the MARKUT file")
+			csvPtr := chatFlag.Bool("csv", false, "Generate the chat using the stupid Twich Chat Downloader CSV format. You can then feed this output to tools like SubChat https://github.com/Kam1k4dze/SubChat")
 
 			err := chatFlag.Parse(args)
 
@@ -912,28 +922,40 @@ var Subcommands = map[string]Subcommand{
 				return false
 			}
 
-			capacity := 1
-			ring := []ChatMessage{}
-			timeCursor := Millis(0)
-			subRipCounter := 0;
-			for _, chunk := range context.chunks {
-				prevTime := chunk.Start
-				for _, message := range chunk.ChatLog {
-					deltaTime := message.TimeOffset - prevTime
-					prevTime = message.TimeOffset
-					if len(ring) > 0 {
-						subRipCounter += 1
-						fmt.Printf("%d\n", subRipCounter);
-						fmt.Printf("%s --> %s\n", millisToSubRipTs(timeCursor), millisToSubRipTs(timeCursor + deltaTime));
-						for _, ringMessage := range ring {
-							fmt.Printf("%s\n", ringMessage.Text);
-						}
-						fmt.Printf("\n")
+			if *csvPtr {
+				fmt.Printf("time,user_name,user_color,message\n");
+				var cursor Millis = 0
+				for _, chunk := range context.chunks {
+					for _, message := range chunk.ChatLog {
+						timestamp := cursor + message.TimeOffset - chunk.Start;
+						fmt.Printf("%d,%s,%s,\"%s\"\n", timestamp, message.Nickname, message.Color, message.Text_);
 					}
-					timeCursor += deltaTime
-					ring = captionsRingPush(ring, message, capacity);
+					cursor += chunk.End - chunk.Start;
 				}
-				timeCursor += chunk.End - prevTime
+			} else {
+				capacity := 1
+				ring := []ChatMessage{}
+				timeCursor := Millis(0)
+				subRipCounter := 0;
+				for _, chunk := range context.chunks {
+					prevTime := chunk.Start
+					for _, message := range chunk.ChatLog {
+						deltaTime := message.TimeOffset - prevTime
+						prevTime = message.TimeOffset
+						if len(ring) > 0 {
+							subRipCounter += 1
+							fmt.Printf("%d\n", subRipCounter);
+							fmt.Printf("%s --> %s\n", millisToSubRipTs(timeCursor), millisToSubRipTs(timeCursor + deltaTime));
+							for _, ringMessage := range ring {
+								fmt.Printf("[%s] %s\n", ringMessage.Nickname, ringMessage.Text_);
+							}
+							fmt.Printf("\n")
+						}
+						timeCursor += deltaTime
+						ring = captionsRingPush(ring, message, capacity);
+					}
+					timeCursor += chunk.End - prevTime
+				}
 			}
 
 			return true
