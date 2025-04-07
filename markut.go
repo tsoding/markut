@@ -51,18 +51,22 @@ func millisToSubRipTs(millis Millis) string {
 }
 
 type ChatMessage struct {
-	TimeOffset Millis
 	Nickname string
 	Color string
-	Text_ string
+	Text string
+}
+
+type ChatMessageGroup struct {
+	TimeOffset Millis
+	Messages []ChatMessage
 }
 
 type Chunk struct {
 	Start Millis
-	End   Millis
+	End Millis
 	Loc Loc
 	InputPath string
-	ChatLog []ChatMessage
+	ChatLog []ChatMessageGroup
 	Blur bool
 	Unfinished bool
 }
@@ -140,7 +144,7 @@ type EvalContext struct {
 	inputPath string
 	inputPathLog []Token
 	outputPath string
-	chatLog []ChatMessage
+	chatLog []ChatMessageGroup
 	chunks []Chunk
 	chapters []Chapter
 	cuts []Cut
@@ -289,7 +293,7 @@ func (context EvalContext) containsChunkWithName(filePath string) bool {
 }
 
 // IMPORTANT! chatLog is assumed to be sorted by TimeOffset.
-func sliceChatLog(chatLog []ChatMessage, start, end Millis) []ChatMessage {
+func sliceChatLog(chatLog []ChatMessageGroup, start, end Millis) []ChatMessageGroup {
 	// TODO: use Binary Search for a speed up on big chat logs
 	lower := 0
 	for lower < len(chatLog) && chatLog[lower].TimeOffset < start {
@@ -302,25 +306,21 @@ func sliceChatLog(chatLog []ChatMessage, start, end Millis) []ChatMessage {
 	if lower < len(chatLog) {
 		return chatLog[lower:upper]
 	}
-	return []ChatMessage{}
+	return []ChatMessageGroup{}
 }
 
 // IMPORTANT! chatLog is assumed to be sorted by TimeOffset.
-// TODO: chat log compression does not make sense anymore
-//   We need to introduce ChatMessage groups instead of concatinating rendering messages
-/*
-func compressChatLog(chatLog []ChatMessage) []ChatMessage {
-	result := []ChatMessage{}
+func compressChatLog(chatLog []ChatMessageGroup) []ChatMessageGroup {
+	result := []ChatMessageGroup{}
 	for i := range chatLog {
 		if len(result) > 0 && result[len(result)-1].TimeOffset == chatLog[i].TimeOffset {
-			result[len(result)-1].Text = result[len(result)-1].Text + "\n" + chatLog[i].Text
+			result[len(result)-1].Messages = append(result[len(result)-1].Messages, chatLog[i].Messages...)
 		} else {
 			result = append(result, chatLog[i])
 		}
 	}
 	return result
 }
-*/
 
 type Func struct {
 	Description string
@@ -333,8 +333,8 @@ var funcs map[string]Func;
 
 // This function is compatible with the format https://www.twitchchatdownloader.com/ generates.
 // It does not use encoding/csv because that website somehow generates unparsable garbage.
-func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, error) {
-	chatLog := []ChatMessage{}
+func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessageGroup, error) {
+	chatLog := []ChatMessageGroup{}
 	f, err := os.Open(path);
 	if err != nil {
 		return chatLog, err
@@ -366,11 +366,11 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, er
 			text = text[1:len(text)-1]
 		}
 
-		chatLog = append(chatLog, ChatMessage{
+		chatLog = append(chatLog, ChatMessageGroup{
 			TimeOffset: Millis(secs*1000),
-			Color: color,
-			Nickname: nickname,
-			Text_: text,
+			Messages: []ChatMessage{
+				{Color: color, Nickname: nickname, Text: text},
+			},
 		})
 	}
 
@@ -378,7 +378,7 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessage, er
 		return chatLog[i].TimeOffset < chatLog[j].TimeOffset
 	})
 
-	return chatLog, nil
+	return compressChatLog(chatLog), nil
 }
 
 func (context *EvalContext) evalMarkutContent(content string, path string) bool {
@@ -652,7 +652,7 @@ func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) error {
 	return nil
 }
 
-func captionsRingPush(ring []ChatMessage, message ChatMessage, capacity int) []ChatMessage {
+func captionsRingPush(ring []ChatMessageGroup, message ChatMessageGroup, capacity int) []ChatMessageGroup {
 	if len(ring) < capacity {
 		return append(ring, message)
 	}
@@ -926,17 +926,20 @@ var Subcommands = map[string]Subcommand{
 				fmt.Printf("time,user_name,user_color,message\n");
 				var cursor Millis = 0
 				for _, chunk := range context.chunks {
-					for _, message := range chunk.ChatLog {
-						timestamp := cursor + message.TimeOffset - chunk.Start;
-						fmt.Printf("%d,%s,%s,\"%s\"\n", timestamp, message.Nickname, message.Color, message.Text_);
+					for _, messageGroup := range chunk.ChatLog {
+						timestamp := cursor + messageGroup.TimeOffset - chunk.Start;
+						for _, message := range messageGroup.Messages {
+							fmt.Printf("%d,%s,%s,\"%s\"\n", timestamp, message.Nickname, message.Color, message.Text);
+						}
 					}
 					cursor += chunk.End - chunk.Start;
 				}
 			} else {
 				capacity := 1
-				ring := []ChatMessage{}
+				ring := []ChatMessageGroup{}
 				timeCursor := Millis(0)
 				subRipCounter := 0;
+				sb := strings.Builder{}
 				for _, chunk := range context.chunks {
 					prevTime := chunk.Start
 					for _, message := range chunk.ChatLog {
@@ -946,8 +949,12 @@ var Subcommands = map[string]Subcommand{
 							subRipCounter += 1
 							fmt.Printf("%d\n", subRipCounter);
 							fmt.Printf("%s --> %s\n", millisToSubRipTs(timeCursor), millisToSubRipTs(timeCursor + deltaTime));
-							for _, ringMessage := range ring {
-								fmt.Printf("[%s] %s\n", ringMessage.Nickname, ringMessage.Text_);
+							for _, ringMessageGroup := range ring {
+								sb.Reset();
+								for _, message := range ringMessageGroup.Messages {
+									sb.WriteString(fmt.Sprintf("[%s] %s\n", message.Nickname, message.Text));
+								}
+								fmt.Printf("%s", sb.String());
 							}
 							fmt.Printf("\n")
 						}
@@ -1375,7 +1382,7 @@ func main() {
 			Category: "Chat",
 			Signature: "--",
 			Run: func(context *EvalContext, command string, token Token) bool {
-				context.chatLog = []ChatMessage{}
+				context.chatLog = []ChatMessageGroup{}
 				return true
 			},
 		},
