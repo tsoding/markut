@@ -72,6 +72,7 @@ type Chunk struct {
 }
 
 const ChunksFolder = "chunks"
+const TwitchChatDownloaderCSVHeader = "time,user_name,user_color,message"
 
 func (chunk Chunk) Name() string {
 	inputPath := strings.ReplaceAll(chunk.InputPath, "/", "_")
@@ -923,7 +924,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			if *csvPtr {
-				fmt.Printf("time,user_name,user_color,message\n");
+				fmt.Printf("%s\n", TwitchChatDownloaderCSVHeader);
 				var cursor Millis = 0
 				for _, chunk := range context.chunks {
 					for _, messageGroup := range chunk.ChatLog {
@@ -1265,6 +1266,7 @@ var Subcommands = map[string]Subcommand{
 				return gqlCursorId, true
 			}
 
+			fmt.Printf("%s\n", TwitchChatDownloaderCSVHeader);
 			gqlCursorId, ok := queryMessagesByOffset(*videoIdPtr, "")
 			if !ok {
 				return false
