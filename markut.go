@@ -347,7 +347,12 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessageGrou
 
 	content := string(bytes)
 	for i, line := range strings.Split(content, "\n") {
+		if i == 0 && line == TwitchChatDownloaderCSVHeader {
+			// If first line contains the TwitchChatDownloader's stupid header, just ignore it. Just let people have it.
+			continue
+		}
 		if len(line) == 0 {
+			// We encounter empty line usually at the end of the file. So it should be safe to break.
 			break
 		}
 		pair := strings.SplitN(line, ",", 2)
