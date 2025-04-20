@@ -1,21 +1,21 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
-	"strings"
-	"errors"
-	"time"
-	"io/ioutil"
-	"strconv"
-	"sort"
 	"regexp"
 	"slices"
-	"net/http"
-	"encoding/json"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 )
 
 func decomposeMillis(millis Millis) (hh int64, mm int64, ss int64, ms int64, sign string) {
@@ -52,22 +52,22 @@ func millisToSubRipTs(millis Millis) string {
 
 type ChatMessage struct {
 	Nickname string
-	Color string
-	Text string
+	Color    string
+	Text     string
 }
 
 type ChatMessageGroup struct {
 	TimeOffset Millis
-	Messages []ChatMessage
+	Messages   []ChatMessage
 }
 
 type Chunk struct {
-	Start Millis
-	End Millis
-	Loc Loc
-	InputPath string
-	ChatLog []ChatMessageGroup
-	Blur bool
+	Start      Millis
+	End        Millis
+	Loc        Loc
+	InputPath  string
+	ChatLog    []ChatMessageGroup
+	Blur       bool
 	Unfinished bool
 }
 
@@ -103,12 +103,12 @@ func (chunk Chunk) Rendered() (bool, error) {
 }
 
 type Chapter struct {
-	Loc Loc
+	Loc       Loc
 	Timestamp Millis
-	Label string
+	Label     string
 }
 
-const MinYouTubeChapterDuration Millis = 10*1000;
+const MinYouTubeChapterDuration Millis = 10 * 1000
 
 func (context *EvalContext) typeCheckArgs(loc Loc, signature ...TokenKind) (args []Token, err error) {
 	if len(context.argsStack) < len(signature) {
@@ -138,35 +138,35 @@ func (context *EvalContext) typeCheckArgs(loc Loc, signature ...TokenKind) (args
 
 type Cut struct {
 	chunk int
-	pad Millis
+	pad   Millis
 }
 
 type EvalContext struct {
-	inputPath string
+	inputPath    string
 	inputPathLog []Token
-	outputPath string
-	chatLog []ChatMessageGroup
-	chunks []Chunk
-	chapters []Chapter
-	cuts []Cut
+	outputPath   string
+	chatLog      []ChatMessageGroup
+	chunks       []Chunk
+	chapters     []Chapter
+	cuts         []Cut
 
-	argsStack []Token
-	chapStack []Chapter
+	argsStack  []Token
+	chapStack  []Chapter
 	chapOffset Millis
 
-	VideoCodec *Token
+	VideoCodec   *Token
 	VideoBitrate *Token
-	AudioCodec *Token
+	AudioCodec   *Token
 	AudioBitrate *Token
 
 	ExtraOutFlags []Token
-	ExtraInFlags []Token
+	ExtraInFlags  []Token
 }
 
 const (
-	DefaultVideoCodec = "libx264"
+	DefaultVideoCodec   = "libx264"
 	DefaultVideoBitrate = "4000k"
-	DefaultAudioCodec = "aac"
+	DefaultAudioCodec   = "aac"
 	DefaultAudioBitrate = "300k"
 )
 
@@ -176,57 +176,57 @@ func defaultContext() (EvalContext, bool) {
 	}
 
 	if home, ok := os.LookupEnv("HOME"); ok {
-		path := path.Join(home, ".markut");
-		content, err := ioutil.ReadFile(path);
+		path := path.Join(home, ".markut")
+		content, err := ioutil.ReadFile(path)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return context, true;
+				return context, true
 			}
-			fmt.Printf("ERROR: Could not open %s to read as a config: %s\n", path, err);
-			return context, false;
+			fmt.Printf("ERROR: Could not open %s to read as a config: %s\n", path, err)
+			return context, false
 		}
 		if !context.evalMarkutContent(string(content), path) {
 			return context, false
 		}
 	}
-	return context, true;
+	return context, true
 }
 
 func (context EvalContext) PrintSummary() error {
 	fmt.Printf(">>> Main Output Parameters:\n")
 	if context.VideoCodec != nil {
-		fmt.Printf("Video Codec:   %s (Defined at %s)\n", string(context.VideoCodec.Text), context.VideoCodec.Loc);
+		fmt.Printf("Video Codec:   %s (Defined at %s)\n", string(context.VideoCodec.Text), context.VideoCodec.Loc)
 	} else {
-		fmt.Printf("Video Codec:   %s (Default)\n", DefaultVideoCodec);
+		fmt.Printf("Video Codec:   %s (Default)\n", DefaultVideoCodec)
 	}
 	if context.VideoBitrate != nil {
-		fmt.Printf("Video Bitrate: %s (Defined at %s)\n", string(context.VideoBitrate.Text), context.VideoBitrate.Loc);
+		fmt.Printf("Video Bitrate: %s (Defined at %s)\n", string(context.VideoBitrate.Text), context.VideoBitrate.Loc)
 	} else {
-		fmt.Printf("Video Bitrate: %s (Default)\n", DefaultVideoBitrate);
+		fmt.Printf("Video Bitrate: %s (Default)\n", DefaultVideoBitrate)
 	}
 	if context.AudioCodec != nil {
-		fmt.Printf("Audio Codec:   %s (Defined at %s)\n", string(context.AudioCodec.Text), context.AudioCodec.Loc);
+		fmt.Printf("Audio Codec:   %s (Defined at %s)\n", string(context.AudioCodec.Text), context.AudioCodec.Loc)
 	} else {
-		fmt.Printf("Audio Codec:   %s (Default)\n", DefaultAudioCodec);
+		fmt.Printf("Audio Codec:   %s (Default)\n", DefaultAudioCodec)
 	}
 	if context.AudioBitrate != nil {
-		fmt.Printf("Audio Bitrate: %s (Defined at %s)\n", string(context.AudioBitrate.Text), context.AudioBitrate.Loc);
+		fmt.Printf("Audio Bitrate: %s (Defined at %s)\n", string(context.AudioBitrate.Text), context.AudioBitrate.Loc)
 	} else {
-		fmt.Printf("Audio Bitrate: %s (Default)\n", DefaultAudioBitrate);
+		fmt.Printf("Audio Bitrate: %s (Default)\n", DefaultAudioBitrate)
 	}
 	fmt.Println()
 	// TODO: merge together parameters defined on the same line
 	if len(context.ExtraInFlags) > 0 {
 		fmt.Printf(">>> Extra Input Parameters:\n")
 		for _, inFlag := range context.ExtraInFlags {
-			fmt.Printf("%s: %s\n", inFlag.Loc, string(inFlag.Text));
+			fmt.Printf("%s: %s\n", inFlag.Loc, string(inFlag.Text))
 		}
 		fmt.Println()
 	}
 	if len(context.ExtraOutFlags) > 0 {
 		fmt.Printf(">>> Extra Output Parameters:\n")
 		for _, outFlag := range context.ExtraOutFlags {
-			fmt.Printf("%s: %s\n", outFlag.Loc, string(outFlag.Text));
+			fmt.Printf("%s: %s\n", outFlag.Loc, string(outFlag.Text))
 		}
 		fmt.Println()
 	}
@@ -242,13 +242,13 @@ func (context EvalContext) PrintSummary() error {
 		}
 	}
 	fmt.Println()
-	fmt.Printf(">>> Cuts (%d):\n", max(len(context.chunks) - 1, 0))
+	fmt.Printf(">>> Cuts (%d):\n", max(len(context.chunks)-1, 0))
 	var fullLength Millis = 0
 	var finishedLength Millis = 0
 	var renderedLength Millis = 0
 	for i, chunk := range context.chunks {
-		if i < len(context.chunks) - 1 {
-			fmt.Printf("%s: Cut %d - %s\n", chunk.Loc, i, millisToTs(fullLength + chunk.Duration()))
+		if i < len(context.chunks)-1 {
+			fmt.Printf("%s: Cut %d - %s\n", chunk.Loc, i, millisToTs(fullLength+chunk.Duration()))
 		}
 		fullLength += chunk.Duration()
 		if !chunk.Unfinished {
@@ -261,7 +261,7 @@ func (context EvalContext) PrintSummary() error {
 	fmt.Println()
 	fmt.Printf(">>> Chunks (%d):\n", len(context.chunks))
 	for index, chunk := range context.chunks {
-		rendered, err := chunk.Rendered();
+		rendered, err := chunk.Rendered()
 		if err != nil {
 			return nil
 		}
@@ -285,7 +285,7 @@ func (context EvalContext) PrintSummary() error {
 }
 
 func (context EvalContext) containsChunkWithName(filePath string) bool {
-	for _, chunk := range(context.chunks) {
+	for _, chunk := range context.chunks {
 		if chunk.Name() == filePath {
 			return true
 		}
@@ -300,7 +300,7 @@ func sliceChatLog(chatLog []ChatMessageGroup, start, end Millis) []ChatMessageGr
 	for lower < len(chatLog) && chatLog[lower].TimeOffset < start {
 		lower += 1
 	}
-	upper := lower;
+	upper := lower
 	for upper < len(chatLog) && chatLog[upper].TimeOffset <= end {
 		upper += 1
 	}
@@ -325,18 +325,18 @@ func compressChatLog(chatLog []ChatMessageGroup) []ChatMessageGroup {
 
 type Func struct {
 	Description string
-	Signature string
-	Category string
-	Run func(context *EvalContext, command string, token Token) bool
+	Signature   string
+	Category    string
+	Run         func(context *EvalContext, command string, token Token) bool
 }
 
-var funcs map[string]Func;
+var funcs map[string]Func
 
 // This function is compatible with the format https://www.twitchchatdownloader.com/ generates.
 // It does not use encoding/csv because that website somehow generates unparsable garbage.
 func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessageGroup, error) {
 	chatLog := []ChatMessageGroup{}
-	f, err := os.Open(path);
+	f, err := os.Open(path)
 	if err != nil {
 		return chatLog, err
 	}
@@ -369,11 +369,11 @@ func loadTwitchChatDownloaderCSVButParseManually(path string) ([]ChatMessageGrou
 		text := pair[1]
 
 		if len(text) >= 2 && text[0] == '"' && text[len(text)-1] == '"' {
-			text = text[1:len(text)-1]
+			text = text[1 : len(text)-1]
 		}
 
 		chatLog = append(chatLog, ChatMessageGroup{
-			TimeOffset: Millis(secs*1000),
+			TimeOffset: Millis(secs * 1000),
 			Messages: []ChatMessage{
 				{Color: color, Nickname: nickname, Text: text},
 			},
@@ -408,24 +408,24 @@ func (context *EvalContext) evalMarkutContent(content string, path string) bool 
 			args, err = context.typeCheckArgs(token.Loc, TokenTimestamp, TokenTimestamp)
 			if err != nil {
 				fmt.Printf("%s: ERROR: type check failed for subtraction\n", token.Loc)
-				fmt.Printf("%s\n", err);
+				fmt.Printf("%s\n", err)
 				return false
 			}
 			context.argsStack = append(context.argsStack, Token{
-				Loc: token.Loc,
-				Kind: TokenTimestamp,
+				Loc:       token.Loc,
+				Kind:      TokenTimestamp,
 				Timestamp: args[1].Timestamp - args[0].Timestamp,
 			})
 		case TokenPlus:
 			args, err = context.typeCheckArgs(token.Loc, TokenTimestamp, TokenTimestamp)
 			if err != nil {
 				fmt.Printf("%s: ERROR: type check failed for addition\n", token.Loc)
-				fmt.Printf("%s\n", err);
+				fmt.Printf("%s\n", err)
 				return false
 			}
 			context.argsStack = append(context.argsStack, Token{
-				Loc: token.Loc,
-				Kind: TokenTimestamp,
+				Loc:       token.Loc,
+				Kind:      TokenTimestamp,
 				Timestamp: args[1].Timestamp + args[0].Timestamp,
 			})
 		case TokenString:
@@ -434,7 +434,7 @@ func (context *EvalContext) evalMarkutContent(content string, path string) bool 
 			context.argsStack = append(context.argsStack, token)
 		case TokenSymbol:
 			command := string(token.Text)
-			f, ok := funcs[command];
+			f, ok := funcs[command]
 			if !ok {
 				fmt.Printf("%s: ERROR: Unknown command %s\n", token.Loc, command)
 				return false
@@ -443,7 +443,7 @@ func (context *EvalContext) evalMarkutContent(content string, path string) bool 
 				return false
 			}
 		default:
-			fmt.Printf("%s: ERROR: Unexpected token %s\n", token.Loc, TokenKindName[token.Kind]);
+			fmt.Printf("%s: ERROR: Unexpected token %s\n", token.Loc, TokenKindName[token.Kind])
 			return false
 		}
 	}
@@ -456,7 +456,7 @@ func (context *EvalContext) evalMarkutFile(loc *Loc, path string, ignoreIfMissin
 	if err != nil {
 		sb := strings.Builder{}
 		if loc != nil {
-			sb.WriteString(fmt.Sprintf("%s: ", *loc));
+			sb.WriteString(fmt.Sprintf("%s: ", *loc))
 		}
 		if ignoreIfMissing {
 			sb.WriteString("WARNING: ")
@@ -472,13 +472,13 @@ func (context *EvalContext) evalMarkutFile(loc *Loc, path string, ignoreIfMissin
 }
 
 func (context *EvalContext) finishEval() bool {
-	for i := 0; i + 1 < len(context.chapters); i += 1 {
-		duration := context.chapters[i + 1].Timestamp - context.chapters[i].Timestamp;
+	for i := 0; i+1 < len(context.chapters); i += 1 {
+		duration := context.chapters[i+1].Timestamp - context.chapters[i].Timestamp
 		// TODO: angled brackets are not allowed on YouTube. Let's make `chapters` check for that too.
 		if duration < MinYouTubeChapterDuration {
-			fmt.Printf("%s: ERROR: the chapter \"%s\" has duration %s which is shorter than the minimal allowed YouTube chapter duration which is %s (See https://support.google.com/youtube/answer/9884579)\n", context.chapters[i].Loc, context.chapters[i].Label, millisToTs(duration), millisToTs(MinYouTubeChapterDuration));
-			fmt.Printf("%s: NOTE: the chapter ends here\n", context.chapters[i + 1].Loc);
-			return false;
+			fmt.Printf("%s: ERROR: the chapter \"%s\" has duration %s which is shorter than the minimal allowed YouTube chapter duration which is %s (See https://support.google.com/youtube/answer/9884579)\n", context.chapters[i].Loc, context.chapters[i].Label, millisToTs(duration), millisToTs(MinYouTubeChapterDuration))
+			fmt.Printf("%s: NOTE: the chapter ends here\n", context.chapters[i+1].Loc)
+			return false
 		}
 	}
 
@@ -524,14 +524,14 @@ func millisToSecsForFFmpeg(millis Millis) string {
 }
 
 func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
-	rendered, err := chunk.Rendered();
+	rendered, err := chunk.Rendered()
 	if err != nil {
-		return err;
+		return err
 	}
 
 	if rendered {
-		fmt.Printf("INFO: %s is already rendered\n", chunk.Name());
-		return nil;
+		fmt.Printf("INFO: %s is already rendered\n", chunk.Name())
+		return nil
 	}
 
 	err = os.MkdirAll(ChunksFolder, 0755)
@@ -548,7 +548,7 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
 	// after the rendering has finished successfully. The successfully
 	// rendered chunks are not being rerendered due to the check at
 	// the beginning of the function.
-	args = append(args, "-y");
+	args = append(args, "-y")
 
 	args = append(args, "-ss", millisToSecsForFFmpeg(chunk.Start))
 	for _, inFlag := range context.ExtraInFlags {
@@ -596,7 +596,7 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
 		return err
 	}
 
-	fmt.Printf("INFO: Rename %s -> %s\n", unfinishedChunkName, chunk.Name());
+	fmt.Printf("INFO: Rename %s -> %s\n", unfinishedChunkName, chunk.Name())
 	return os.Rename(unfinishedChunkName, chunk.Name())
 }
 
@@ -685,7 +685,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			if err != nil {
-				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
 				return false
 			}
 
@@ -707,7 +707,7 @@ var Subcommands = map[string]Subcommand{
 	},
 	"cut": {
 		Description: "Render specific cut of the final video",
-		Run: func (name string, args []string) bool {
+		Run: func(name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the MARKUT file")
 
@@ -717,7 +717,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			if err != nil {
-				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
 				return false
 			}
 
@@ -728,8 +728,8 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			if len(context.cuts) == 0 {
-				fmt.Printf("ERROR: No cuts are provided. Use `cut` command after a `chunk` command to define a cut\n");
-				return false;
+				fmt.Printf("ERROR: No cuts are provided. Use `cut` command after a `chunk` command to define a cut\n")
+				return false
 			}
 
 			for _, cut := range context.cuts {
@@ -740,13 +740,13 @@ var Subcommands = map[string]Subcommand{
 
 				cutChunks := []Chunk{
 					{
-						Start: context.chunks[cut.chunk].End - cut.pad,
-						End:   context.chunks[cut.chunk].End,
+						Start:     context.chunks[cut.chunk].End - cut.pad,
+						End:       context.chunks[cut.chunk].End,
 						InputPath: context.chunks[cut.chunk].InputPath,
 					},
 					{
-						Start: context.chunks[cut.chunk+1].Start,
-						End:   context.chunks[cut.chunk+1].Start + cut.pad,
+						Start:     context.chunks[cut.chunk+1].Start,
+						End:       context.chunks[cut.chunk+1].Start + cut.pad,
 						InputPath: context.chunks[cut.chunk+1].InputPath,
 					},
 				}
@@ -773,8 +773,8 @@ var Subcommands = map[string]Subcommand{
 					return false
 				}
 
-				fmt.Printf("Generated %s\n", cutOutputPath);
-				fmt.Printf("%s: NOTE: cut is defined in here\n", context.chunks[cut.chunk].Loc);
+				fmt.Printf("Generated %s\n", cutOutputPath)
+				fmt.Printf("%s: NOTE: cut is defined in here\n", context.chunks[cut.chunk].Loc)
 			}
 
 			return true
@@ -782,7 +782,7 @@ var Subcommands = map[string]Subcommand{
 	},
 	"chunk": {
 		Description: "Render specific chunk of the final video",
-		Run: func (name string, args []string) bool {
+		Run: func(name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the MARKUT file")
 			chunkPtr := subFlag.Int("chunk", 0, "Chunk number to render")
@@ -794,11 +794,11 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			if err != nil {
-				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
 				return false
 			}
 
-			context, ok := defaultContext();
+			context, ok := defaultContext()
 			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
 			if !ok {
 				return false
@@ -823,7 +823,7 @@ var Subcommands = map[string]Subcommand{
 	},
 	"final": {
 		Description: "Render the final video",
-		Run: func (name string, args []string) bool {
+		Run: func(name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the MARKUT file")
 
@@ -833,7 +833,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			if err != nil {
-				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
 				return false
 			}
 
@@ -854,7 +854,7 @@ var Subcommands = map[string]Subcommand{
 			err = ffmpegGenerateConcatList(context.chunks, listPath)
 			if err != nil {
 				fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
-				return false;
+				return false
 			}
 
 			err = ffmpegConcatChunks(listPath, context.outputPath)
@@ -865,7 +865,7 @@ var Subcommands = map[string]Subcommand{
 
 			err = context.PrintSummary()
 			if err != nil {
-				fmt.Printf("ERROR: Could not print summary: %s\n", err);
+				fmt.Printf("ERROR: Could not print summary: %s\n", err)
 				return false
 			}
 
@@ -874,7 +874,7 @@ var Subcommands = map[string]Subcommand{
 	},
 	"summary": {
 		Description: "Print the summary of the video",
-		Run: func (name string, args []string) bool {
+		Run: func(name string, args []string) bool {
 			summFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := summFlag.String("markut", "MARKUT", "Path to the MARKUT file")
 
@@ -885,11 +885,11 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			if err != nil {
-				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
 				return false
 			}
 
-			context, ok := defaultContext();
+			context, ok := defaultContext()
 			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
 			if !ok {
 				return false
@@ -906,7 +906,7 @@ var Subcommands = map[string]Subcommand{
 	},
 	"chat": {
 		Description: "Generate chat captions",
-		Run: func (name string, args []string) bool {
+		Run: func(name string, args []string) bool {
 			chatFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := chatFlag.String("markut", "MARKUT", "Path to the MARKUT file")
 			csvPtr := chatFlag.Bool("csv", false, "Generate the chat using the stupid Twich Chat Downloader CSV format. You can then feed this output to tools like SubChat https://github.com/Kam1k4dze/SubChat")
@@ -918,7 +918,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			if err != nil {
-				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
 				return false
 			}
 
@@ -929,22 +929,22 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			if *csvPtr {
-				fmt.Printf("%s\n", TwitchChatDownloaderCSVHeader);
+				fmt.Printf("%s\n", TwitchChatDownloaderCSVHeader)
 				var cursor Millis = 0
 				for _, chunk := range context.chunks {
 					for _, messageGroup := range chunk.ChatLog {
-						timestamp := cursor + messageGroup.TimeOffset - chunk.Start;
+						timestamp := cursor + messageGroup.TimeOffset - chunk.Start
 						for _, message := range messageGroup.Messages {
-							fmt.Printf("%d,%s,%s,\"%s\"\n", timestamp, message.Nickname, message.Color, message.Text);
+							fmt.Printf("%d,%s,%s,\"%s\"\n", timestamp, message.Nickname, message.Color, message.Text)
 						}
 					}
-					cursor += chunk.End - chunk.Start;
+					cursor += chunk.End - chunk.Start
 				}
 			} else {
 				capacity := 1
 				ring := []ChatMessageGroup{}
 				timeCursor := Millis(0)
-				subRipCounter := 0;
+				subRipCounter := 0
 				sb := strings.Builder{}
 				for _, chunk := range context.chunks {
 					prevTime := chunk.Start
@@ -953,19 +953,19 @@ var Subcommands = map[string]Subcommand{
 						prevTime = message.TimeOffset
 						if len(ring) > 0 {
 							subRipCounter += 1
-							fmt.Printf("%d\n", subRipCounter);
-							fmt.Printf("%s --> %s\n", millisToSubRipTs(timeCursor), millisToSubRipTs(timeCursor + deltaTime));
+							fmt.Printf("%d\n", subRipCounter)
+							fmt.Printf("%s --> %s\n", millisToSubRipTs(timeCursor), millisToSubRipTs(timeCursor+deltaTime))
 							for _, ringMessageGroup := range ring {
-								sb.Reset();
+								sb.Reset()
 								for _, message := range ringMessageGroup.Messages {
-									sb.WriteString(fmt.Sprintf("[%s] %s\n", message.Nickname, message.Text));
+									sb.WriteString(fmt.Sprintf("[%s] %s\n", message.Nickname, message.Text))
 								}
-								fmt.Printf("%s", sb.String());
+								fmt.Printf("%s", sb.String())
 							}
 							fmt.Printf("\n")
 						}
 						timeCursor += deltaTime
-						ring = captionsRingPush(ring, message, capacity);
+						ring = captionsRingPush(ring, message, capacity)
 					}
 					timeCursor += chunk.End - prevTime
 				}
@@ -976,7 +976,7 @@ var Subcommands = map[string]Subcommand{
 	},
 	"prune": {
 		Description: "Prune unused chunks",
-		Run: func (name string, args []string) bool {
+		Run: func(name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the MARKUT file")
 
@@ -987,11 +987,11 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			if err != nil {
-				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
 				return false
 			}
 
-			context, ok := defaultContext();
+			context, ok := defaultContext()
 			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
 			if !ok {
 				return false
@@ -999,25 +999,25 @@ var Subcommands = map[string]Subcommand{
 
 			files, err := ioutil.ReadDir(ChunksFolder)
 			if err != nil {
-				fmt.Printf("ERROR: could not read %s folder: %s\n", ChunksFolder, err);
-				return false;
+				fmt.Printf("ERROR: could not read %s folder: %s\n", ChunksFolder, err)
+				return false
 			}
 
 			for _, file := range files {
 				if !file.IsDir() {
-					filePath := fmt.Sprintf("%s/%s", ChunksFolder, file.Name());
+					filePath := fmt.Sprintf("%s/%s", ChunksFolder, file.Name())
 					if !context.containsChunkWithName(filePath) {
-						fmt.Printf("INFO: deleting chunk file %s\n", filePath);
+						fmt.Printf("INFO: deleting chunk file %s\n", filePath)
 						err = os.Remove(filePath)
 						if err != nil {
 							fmt.Printf("ERROR: could not remove file %s: %s\n", filePath, err)
-							return false;
+							return false
 						}
 					}
 				}
 			}
 
-			fmt.Printf("DONE\n");
+			fmt.Printf("DONE\n")
 
 			return true
 		},
@@ -1025,7 +1025,7 @@ var Subcommands = map[string]Subcommand{
 	// TODO: Maybe watch mode should just be a flag for the `final` subcommand
 	"watch": {
 		Description: "Render finished chunks in watch mode every time MARKUT file is modified",
-		Run: func (name string, args []string) bool {
+		Run: func(name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the MARKUT file")
 			skipcatPtr := subFlag.Bool("skipcat", false, "Skip concatenation step")
@@ -1037,7 +1037,7 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			if err != nil {
-				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
 				return false
 			}
 
@@ -1047,14 +1047,14 @@ var Subcommands = map[string]Subcommand{
 				// This kind of crappy modification checking needs at least some sort of atomicity.
 				// rsync(1) is as atomic as rename(2). So it's alright for majority of the cases.
 
-				context, ok := defaultContext();
+				context, ok := defaultContext()
 				ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
 				if !ok {
 					return false
 				}
 
 				done := true
-				for _, chunk := range(context.chunks) {
+				for _, chunk := range context.chunks {
 					if chunk.Unfinished {
 						done = false
 						continue
@@ -1091,7 +1091,7 @@ var Subcommands = map[string]Subcommand{
 				err = ffmpegGenerateConcatList(context.chunks, listPath)
 				if err != nil {
 					fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
-					return false;
+					return false
 				}
 
 				err = ffmpegConcatChunks(listPath, context.outputPath)
@@ -1103,7 +1103,7 @@ var Subcommands = map[string]Subcommand{
 
 			err = context.PrintSummary()
 			if err != nil {
-				fmt.Printf("ERROR: Could not print summary: %s\n", err);
+				fmt.Printf("ERROR: Could not print summary: %s\n", err)
 				return false
 			}
 
@@ -1112,20 +1112,20 @@ var Subcommands = map[string]Subcommand{
 	},
 	"funcs": {
 		Description: "Print info about all the available funcs of the Markut Language",
-		Run: func (commandName string, args []string) bool {
+		Run: func(commandName string, args []string) bool {
 			if len(args) > 0 {
 				name := args[0]
 				funk, ok := funcs[name]
 				if !ok {
-					fmt.Printf("ERROR: no func named %s is found\n", name);
-					return false;
+					fmt.Printf("ERROR: no func named %s is found\n", name)
+					return false
 				}
-				fmt.Printf("%s : %s\n", name, funk.Signature);
-				fmt.Printf("    %s\n", strings.ReplaceAll(funk.Description, "$SPOILER$", ""));
-				return true;
+				fmt.Printf("%s : %s\n", name, funk.Signature)
+				fmt.Printf("    %s\n", strings.ReplaceAll(funk.Description, "$SPOILER$", ""))
+				return true
 			}
 
-			names := []string{};
+			names := []string{}
 			for name, _ := range funcs {
 				names = append(names, name)
 			}
@@ -1137,20 +1137,20 @@ var Subcommands = map[string]Subcommand{
 			})
 			if len(names) > 0 {
 				category := ""
-				for _, name := range(names) {
+				for _, name := range names {
 					if category != funcs[name].Category {
 						category = funcs[name].Category
 						fmt.Printf("%s:\n", category)
 					}
-					fmt.Printf("    %s - %s\n", name, strings.Split(funcs[name].Description, "$SPOILER$")[0]);
+					fmt.Printf("    %s - %s\n", name, strings.Split(funcs[name].Description, "$SPOILER$")[0])
 				}
 			}
-			return true;
+			return true
 		},
 	},
 	"twitch-chat-download": {
 		Description: "Download Twitch Chat of a VOD and print it in the stupid format https://twitchchatdownloader.com/ uses to maintain compatibility with our existing chat parser",
-		Run: func (commandName string, args []string) bool {
+		Run: func(commandName string, args []string) bool {
 			subFlag := flag.NewFlagSet(commandName, flag.ContinueOnError)
 			videoIdPtr := subFlag.String("videoID", "", "Video ID of the Twitch VOD to download")
 
@@ -1161,11 +1161,11 @@ var Subcommands = map[string]Subcommand{
 			}
 
 			if err != nil {
-				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err);
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
 				return false
 			}
 
-			if (*videoIdPtr == "") {
+			if *videoIdPtr == "" {
 				subFlag.Usage()
 				fmt.Printf("ERROR: No -videoID is provided\n")
 				return false
@@ -1239,7 +1239,7 @@ var Subcommands = map[string]Subcommand{
 					cursor = cursor.(Object)["userColor"]
 					var color string
 					if cursor != nil {
-						color = cursor.(string);
+						color = cursor.(string)
 					} else {
 						// Taken from https://discuss.dev.twitch.com/t/default-user-color-in-chat/385
 						// I don't know if it's still accurate, but I don't care, we just need some sort of
@@ -1252,7 +1252,7 @@ var Subcommands = map[string]Subcommand{
 							"#FF69B4", "#8A2BE2", "#00FF7F",
 						}
 						index := int(commenter[0] + commenter[len(commenter)-1])
-						color = defaultColors[index % len(defaultColors)]
+						color = defaultColors[index%len(defaultColors)]
 					}
 					fmt.Printf("%s,", color)
 
@@ -1271,7 +1271,7 @@ var Subcommands = map[string]Subcommand{
 				return gqlCursorId, true
 			}
 
-			fmt.Printf("%s\n", TwitchChatDownloaderCSVHeader);
+			fmt.Printf("%s\n", TwitchChatDownloaderCSVHeader)
 			gqlCursorId, ok := queryMessagesByOffset(*videoIdPtr, "")
 			if !ok {
 				return false
@@ -1288,11 +1288,11 @@ var Subcommands = map[string]Subcommand{
 }
 
 func usage() {
-	names := []string{};
+	names := []string{}
 	for name, _ := range Subcommands {
 		names = append(names, name)
 	}
-	sort.Strings(names);
+	sort.Strings(names)
 	fmt.Printf("Usage: markut <SUBCOMMAND> [OPTIONS]\n")
 	fmt.Printf("SUBCOMMANDS:\n")
 	for _, name := range names {
@@ -1301,7 +1301,7 @@ func usage() {
 	fmt.Printf("ENVARS:\n")
 	fmt.Printf("    FFMPEG_PREFIX      Prefix path for a custom ffmpeg distribution\n")
 	fmt.Printf("FILES:\n")
-	fmt.Printf("    $HOME/.markut      File that is always evaluated automatically before the MARKUT file\n");
+	fmt.Printf("    $HOME/.markut      File that is always evaluated automatically before the MARKUT file\n")
 }
 
 func main() {
@@ -1314,8 +1314,8 @@ func main() {
 	funcs = map[string]Func{
 		"chat": {
 			Description: "Load a chat log file generated by https://www.twitchchatdownloader.com/$SPOILER$ which is going to be used by the subsequent `chunk` func calls to include certain messages into the subtitles generated by the `markut chat` subcommand. There could be only one loaded chat log at a time. Repeated calls to the `chat` func replace the currently loaded chat log with another one. The already defined chunks keep the copy of the logs that were loaded at the time of their definition.",
-			Signature: "<path:String> --",
-			Category: "Chat",
+			Signature:   "<path:String> --",
+			Category:    "Chat",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
@@ -1334,8 +1334,8 @@ func main() {
 		},
 		"chat_offset": {
 			Description: "Offsets the timestamps of the currently loaded chat log$SPOILER$ by removing all the messages between `start` and `end` Timestamps",
-			Category: "Chat",
-			Signature: "<start:Timestamp> <end:Timestamp> --",
+			Category:    "Chat",
+			Signature:   "<start:Timestamp> <end:Timestamp> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				// // TODO: this check does not make any sense when there are several chat commands
 				// if len(context.chunks) > 0  {
@@ -1354,18 +1354,18 @@ func main() {
 				end := args[0]
 
 				if start.Timestamp < 0 {
-					fmt.Printf("%s: ERROR: the start of the chat offset is negative %s\n", start.Loc, millisToTs(start.Timestamp));
+					fmt.Printf("%s: ERROR: the start of the chat offset is negative %s\n", start.Loc, millisToTs(start.Timestamp))
 					return false
 				}
 
 				if end.Timestamp < 0 {
-					fmt.Printf("%s: ERROR: the end of the chat offset is negative %s\n", end.Loc, millisToTs(end.Timestamp));
+					fmt.Printf("%s: ERROR: the end of the chat offset is negative %s\n", end.Loc, millisToTs(end.Timestamp))
 					return false
 				}
 
 				if start.Timestamp > end.Timestamp {
-					fmt.Printf("%s: ERROR: the end of the chat offset %s is earlier than its start %s\n", end.Loc, millisToTs(end.Timestamp), millisToTs(start.Timestamp));
-					fmt.Printf("%s: NOTE: the start is located here\n", start.Loc);
+					fmt.Printf("%s: ERROR: the end of the chat offset %s is earlier than its start %s\n", end.Loc, millisToTs(end.Timestamp), millisToTs(start.Timestamp))
+					fmt.Printf("%s: NOTE: the start is located here\n", start.Loc)
 					return false
 				}
 
@@ -1386,8 +1386,8 @@ func main() {
 		},
 		"no_chat": {
 			Description: "Clears out the current loaded chat log$SPOILER$ as if nothing is loaded",
-			Category: "Chat",
-			Signature: "--",
+			Category:    "Chat",
+			Signature:   "--",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				context.chatLog = []ChatMessageGroup{}
 				return true
@@ -1395,8 +1395,8 @@ func main() {
 		},
 		"chunk": {
 			Description: "Define a chunk$SPOILER$ between `start` and `end` timestamp for the current input defined by the `input` func",
-			Category: "Chunk",
-			Signature: "<start:Timestamp> <end:Timestamp> --",
+			Category:    "Chunk",
+			Signature:   "<start:Timestamp> <end:Timestamp> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenTimestamp, TokenTimestamp)
 				if err != nil {
@@ -1409,27 +1409,27 @@ func main() {
 				end := args[0]
 
 				if start.Timestamp < 0 {
-					fmt.Printf("%s: ERROR: the start of the chunk is negative %s\n", start.Loc, millisToTs(start.Timestamp));
+					fmt.Printf("%s: ERROR: the start of the chunk is negative %s\n", start.Loc, millisToTs(start.Timestamp))
 					return false
 				}
 
 				if end.Timestamp < 0 {
-					fmt.Printf("%s: ERROR: the end of the chunk is negative %s\n", end.Loc, millisToTs(end.Timestamp));
+					fmt.Printf("%s: ERROR: the end of the chunk is negative %s\n", end.Loc, millisToTs(end.Timestamp))
 					return false
 				}
 
 				if start.Timestamp > end.Timestamp {
-					fmt.Printf("%s: ERROR: the end of the chunk %s is earlier than its start %s\n", end.Loc, millisToTs(end.Timestamp), millisToTs(start.Timestamp));
-					fmt.Printf("%s: NOTE: the start is located here\n", start.Loc);
+					fmt.Printf("%s: ERROR: the end of the chunk %s is earlier than its start %s\n", end.Loc, millisToTs(end.Timestamp), millisToTs(start.Timestamp))
+					fmt.Printf("%s: NOTE: the start is located here\n", start.Loc)
 					return false
 				}
 
 				chunk := Chunk{
-					Loc: token.Loc,
-					Start: start.Timestamp,
-					End: end.Timestamp,
+					Loc:       token.Loc,
+					Start:     start.Timestamp,
+					End:       end.Timestamp,
 					InputPath: context.inputPath,
-					ChatLog: sliceChatLog(context.chatLog, start.Timestamp, end.Timestamp),
+					ChatLog:   sliceChatLog(context.chatLog, start.Timestamp, end.Timestamp),
 				}
 
 				context.chunks = append(context.chunks, chunk)
@@ -1443,9 +1443,9 @@ func main() {
 					}
 
 					context.chapters = append(context.chapters, Chapter{
-						Loc: chapter.Loc,
+						Loc:       chapter.Loc,
 						Timestamp: chapter.Timestamp - chunk.Start + context.chapOffset,
-						Label: chapter.Label,
+						Label:     chapter.Label,
 					})
 				}
 
@@ -1454,12 +1454,11 @@ func main() {
 				context.chapStack = []Chapter{}
 				return true
 			},
-
 		},
 		"blur": {
 			Description: "Blur the last defined chunk$SPOILER$. Useful for bluring out sensitive information.",
-			Signature: "--",
-			Category: "Chunk",
+			Signature:   "--",
+			Category:    "Chunk",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				if len(context.chunks) == 0 {
 					fmt.Printf("%s: ERROR: no chunks defined for a blur\n", token.Loc)
@@ -1471,8 +1470,8 @@ func main() {
 		},
 		"removed": {
 			Description: "Remove the last defined chunk$SPOILER$. Useful for disabling a certain chunk, so you can reenable it later if needed.",
-			Signature: "--",
-			Category: "Chunk",
+			Signature:   "--",
+			Category:    "Chunk",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				if len(context.chunks) == 0 {
 					fmt.Printf("%s: ERROR: no chunks defined for removal\n", token.Loc)
@@ -1484,8 +1483,8 @@ func main() {
 		},
 		"unfinished": {
 			Description: "Mark the last defined chunk as unfinished$SPOILER$. This is used by the `markut watch` subcommand. `markut watch` does not render any unfinished chunks and keeps monitoring the MARKUT file until there is no unfinished chunks.",
-			Signature: "--",
-			Category: "Chunk",
+			Signature:   "--",
+			Category:    "Chunk",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				if len(context.chunks) == 0 {
 					fmt.Printf("%s: ERROR: no chunks defined for marking as unfinished\n", token.Loc)
@@ -1496,9 +1495,9 @@ func main() {
 			},
 		},
 		"video_codec": {
-			Description: "Set the value of the output video codec flag (-c:v). Default is \""+DefaultVideoCodec+"\".",
-			Signature: "<codec:String> --",
-			Category: "FFmpeg Arguments",
+			Description: "Set the value of the output video codec flag (-c:v). Default is \"" + DefaultVideoCodec + "\".",
+			Signature:   "<codec:String> --",
+			Category:    "FFmpeg Arguments",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
@@ -1507,13 +1506,13 @@ func main() {
 					return false
 				}
 				context.VideoCodec = &args[0]
-				return true;
+				return true
 			},
 		},
 		"video_bitrate": {
-			Description: "Set the value of the output video bitrate flag (-vb). Default is \""+DefaultVideoBitrate+"\".",
-			Signature: "<bitrate:String> --",
-			Category: "FFmpeg Arguments",
+			Description: "Set the value of the output video bitrate flag (-vb). Default is \"" + DefaultVideoBitrate + "\".",
+			Signature:   "<bitrate:String> --",
+			Category:    "FFmpeg Arguments",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
@@ -1522,13 +1521,13 @@ func main() {
 					return false
 				}
 				context.VideoBitrate = &args[0]
-				return true;
+				return true
 			},
 		},
 		"audio_codec": {
-			Description: "Set the value of the output audio codec flag (-c:a). Default is \""+DefaultAudioCodec+"\".",
-			Signature: "<codec:String> --",
-			Category: "FFmpeg Arguments",
+			Description: "Set the value of the output audio codec flag (-c:a). Default is \"" + DefaultAudioCodec + "\".",
+			Signature:   "<codec:String> --",
+			Category:    "FFmpeg Arguments",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
@@ -1537,13 +1536,13 @@ func main() {
 					return false
 				}
 				context.AudioCodec = &args[0]
-				return true;
+				return true
 			},
 		},
 		"audio_bitrate": {
-			Description: "Set the value of the output audio bitrate flag (-ab). Default is \""+DefaultAudioBitrate+"\".",
-			Signature: "<bitrate:String> --",
-			Category: "FFmpeg Arguments",
+			Description: "Set the value of the output audio bitrate flag (-ab). Default is \"" + DefaultAudioBitrate + "\".",
+			Signature:   "<bitrate:String> --",
+			Category:    "FFmpeg Arguments",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
@@ -1552,13 +1551,13 @@ func main() {
 					return false
 				}
 				context.AudioBitrate = &args[0]
-				return true;
+				return true
 			},
 		},
 		"outf": {
 			Description: "Append extra output flag",
-			Signature: "<flag:String> --",
-			Category: "FFmpeg Arguments",
+			Signature:   "<flag:String> --",
+			Category:    "FFmpeg Arguments",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
@@ -1568,13 +1567,13 @@ func main() {
 				}
 				outFlag := args[0]
 				context.ExtraOutFlags = append(context.ExtraOutFlags, outFlag)
-				return true;
+				return true
 			},
 		},
 		"inf": {
 			Description: "Append extra input flag",
-			Signature: "<flag:String> --",
-			Category: "FFmpeg Arguments",
+			Signature:   "<flag:String> --",
+			Category:    "FFmpeg Arguments",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
@@ -1584,33 +1583,33 @@ func main() {
 				}
 				inFlag := args[0]
 				context.ExtraInFlags = append(context.ExtraInFlags, inFlag)
-				return true;
+				return true
 			},
 		},
 		"over": {
 			Description: "Copy the argument below the top of the stack on top",
-			Signature: "<a:Type1> <b:Type2> -- <a:Type1> <b:Type2> <a:Type1>",
-			Category: "Stack",
+			Signature:   "<a:Type1> <b:Type2> -- <a:Type1> <b:Type2> <a:Type1>",
+			Category:    "Stack",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				arity := 2
 				if len(context.argsStack) < arity {
-					fmt.Printf("%s: Expected %d arguments but got %d", token.Loc, arity, len(context.argsStack));
-					return false;
+					fmt.Printf("%s: Expected %d arguments but got %d", token.Loc, arity, len(context.argsStack))
+					return false
 				}
 				n := len(context.argsStack)
-				context.argsStack = append(context.argsStack, context.argsStack[n-2]);
-				return true;
+				context.argsStack = append(context.argsStack, context.argsStack[n-2])
+				return true
 			},
 		},
 		"dup": {
 			Description: "Duplicate the argument on top of the stack",
-			Signature: "<a:Type1> -- <a:Type1> <a:Type1>",
-			Category: "Stack",
+			Signature:   "<a:Type1> -- <a:Type1> <a:Type1>",
+			Category:    "Stack",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				arity := 1
 				if len(context.argsStack) < arity {
-					fmt.Printf("%s: Expected %d arguments but got %d", token.Loc, arity, len(context.argsStack));
-					return false;
+					fmt.Printf("%s: Expected %d arguments but got %d", token.Loc, arity, len(context.argsStack))
+					return false
 				}
 				n := len(context.argsStack)
 				// TODO: the location of the dupped value should be the location of the "dup" token
@@ -1620,8 +1619,8 @@ func main() {
 		},
 		"input": {
 			Description: "Set the current input for the consequent chunks.",
-			Category: "Misc",
-			Signature: "<filePath:String> --",
+			Category:    "Misc",
+			Signature:   "<filePath:String> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
@@ -1631,7 +1630,7 @@ func main() {
 				}
 				path := args[0]
 				if len(path.Text) == 0 {
-					fmt.Printf("%s: ERROR: cannot set empty input path\n", path.Loc);
+					fmt.Printf("%s: ERROR: cannot set empty input path\n", path.Loc)
 					return false
 				}
 				context.inputPath = string(path.Text)
@@ -1641,8 +1640,8 @@ func main() {
 		},
 		"chapter": {
 			Description: "Define a new YouTube chapter for within a chunk for `markut summary` command.",
-			Category: "Misc",
-			Signature: "<timestamp:Timestamp> <title:String> --",
+			Category:    "Misc",
+			Signature:   "<timestamp:Timestamp> <title:String> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString, TokenTimestamp)
 				if err != nil {
@@ -1651,8 +1650,8 @@ func main() {
 					return false
 				}
 				context.chapStack = append(context.chapStack, Chapter{
-					Loc: args[1].Loc,
-					Label: string(args[0].Text),
+					Loc:       args[1].Loc,
+					Label:     string(args[0].Text),
 					Timestamp: args[1].Timestamp,
 				})
 				return true
@@ -1660,8 +1659,8 @@ func main() {
 		},
 		"cut": {
 			Description: "Define a new cut for `markut cut` command.",
-			Category: "Misc",
-			Signature: "<padding:Timestamp> --",
+			Category:    "Misc",
+			Signature:   "<padding:Timestamp> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenTimestamp)
 				if err != nil {
@@ -1676,15 +1675,15 @@ func main() {
 				}
 				context.cuts = append(context.cuts, Cut{
 					chunk: len(context.chunks) - 1,
-					pad: pad.Timestamp,
+					pad:   pad.Timestamp,
 				})
 				return true
 			},
 		},
 		"include": {
 			Description: "Include another MARKUT file and fail if it does not exist.",
-			Category: "Misc",
-			Signature: "<path:String> --",
+			Category:    "Misc",
+			Signature:   "<path:String> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
@@ -1698,8 +1697,8 @@ func main() {
 		},
 		"include_if_exists": {
 			Description: "Try to include another MARKUT file but do not fail if it does not exist.",
-			Category: "Misc",
-			Signature: "<path:String> --",
+			Category:    "Misc",
+			Signature:   "<path:String> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString)
 				if err != nil {
@@ -1713,21 +1712,21 @@ func main() {
 		},
 		"home": {
 			Description: "Path to the home folder.",
-			Category: "Misc",
-			Signature: "-- <path:String>",
+			Category:    "Misc",
+			Signature:   "-- <path:String>",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				context.argsStack = append(context.argsStack, Token{
 					Kind: TokenString,
 					Text: []rune(os.Getenv("HOME")),
-					Loc: token.Loc,
+					Loc:  token.Loc,
 				})
 				return true
 			},
 		},
 		"concat": {
 			Description: "Concatenate two strings.",
-			Category: "Misc",
-			Signature: "<a:String> <b:String> -- <a++b:String>",
+			Category:    "Misc",
+			Signature:   "<a:String> <b:String> -- <a++b:String>",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString, TokenString)
 				if err != nil {
@@ -1738,16 +1737,16 @@ func main() {
 				context.argsStack = append(context.argsStack, Token{
 					Kind: TokenString,
 					Text: slices.Concat(args[1].Text, args[0].Text),
-					Loc: token.Loc,
-				});
+					Loc:  token.Loc,
+				})
 				return true
 			},
 		},
 	}
 
-	name := os.Args[1];
-	args := os.Args[2:];
-	subcommand, ok := Subcommands[name];
+	name := os.Args[1]
+	args := os.Args[2:]
+	subcommand, ok := Subcommands[name]
 	if !ok {
 		usage()
 		fmt.Printf("ERROR: Unknown subcommand %s\n", name)
