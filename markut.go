@@ -1338,6 +1338,7 @@ func main() {
 			Signature:   "<start:Timestamp> <end:Timestamp> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				// // TODO: this check does not make any sense when there are several chat commands
+				// //   But I still want to have some sort of sanity check for chat_offsets
 				// if len(context.chunks) > 0  {
 				// 	fmt.Printf("%s: ERROR: chat offset should be applied after `chat` commands but before any `chunks` commands. This is due to `chunk` commands making copies of the chat slices that are not affected by the consequent chat offsets\n", token.Loc);
 				// 	return false;
