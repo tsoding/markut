@@ -8,7 +8,18 @@ Install [Go](https://golang.org/) and [ffmpeg](https://www.ffmpeg.org/).
 
 ```console
 $ go build
-$ ./markut final
+```
+
+To get the list of markut subcommands do
+
+```console
+$ ./markut help
+```
+
+To get the list of functions of the stack language do
+
+```console
+$ ./markut funcs
 ```
 
 <!-- TODO: document available stacks of Markut language -->
