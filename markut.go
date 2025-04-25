@@ -62,13 +62,14 @@ type ChatMessageGroup struct {
 }
 
 type Chunk struct {
-	Start      Millis
-	End        Millis
-	Loc        Loc
-	InputPath  string
-	ChatLog    []ChatMessageGroup
-	Blur       bool
-	Unfinished bool
+	Start         Millis
+	End           Millis
+	Loc           Loc
+	InputPath     string
+	ChatLog       []ChatMessageGroup
+	Blur          bool
+	Unfinished    bool
+	ExtraOutFlags []Token
 }
 
 const ChunksFolder = "chunks"
@@ -80,6 +81,9 @@ func (chunk Chunk) Name() string {
 	fmt.Fprintf(&sb, "%s/%s-%09d-%09d", ChunksFolder, inputPath, chunk.Start, chunk.End)
 	if chunk.Blur {
 		sb.WriteString("-blur")
+	}
+	for _, outFlag := range chunk.ExtraOutFlags {
+		sb.WriteString(strings.ReplaceAll(string(outFlag.Text), "/", "_"))
 	}
 	sb.WriteString(".mp4")
 	return sb.String()
@@ -270,6 +274,7 @@ func (context EvalContext) PrintSummary() error {
 			checkMark = "[x]"
 		}
 		fmt.Printf("%s: %s Chunk %d - %s -> %s (Duration: %s)\n", chunk.Loc, checkMark, index, millisToTs(chunk.Start), millisToTs(chunk.End), millisToTs(chunk.Duration()))
+		// TODO: Print extra output flags of the chunk
 	}
 	fmt.Println()
 	fmt.Printf(">>> YouTube Chapters (%d):\n", len(context.chapters))
@@ -581,6 +586,9 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
 		args = append(args, "-vf", "boxblur=50:5")
 	}
 	for _, outFlag := range context.ExtraOutFlags {
+		args = append(args, string(outFlag.Text))
+	}
+	for _, outFlag := range chunk.ExtraOutFlags {
 		args = append(args, string(outFlag.Text))
 	}
 	unfinishedChunkName := "unfinished-chunk.mp4"
@@ -1555,8 +1563,32 @@ func main() {
 				return true
 			},
 		},
+		"chunk_outf": {
+			Description: "Append extra output flag to the last defined chunk",
+			Signature:   "<flag:String> --",
+			Category:    "FFmpeg Arguments",
+			Run: func(context *EvalContext, command string, token Token) bool {
+				if len(context.chunks) == 0 {
+					fmt.Printf("%s: ERROR: no chunks defined to add extra output flag to\n", token.Loc)
+					return false
+				}
+
+				args, err := context.typeCheckArgs(token.Loc, TokenString)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					return false
+				}
+				outFlag := args[0]
+
+				chunk := &context.chunks[len(context.chunks)-1];
+				chunk.ExtraOutFlags = append(chunk.ExtraOutFlags, outFlag)
+
+				return true
+			},
+		},
 		"outf": {
-			Description: "Append extra output flag",
+			Description: "Append extra output flag for every chunk",
 			Signature:   "<flag:String> --",
 			Category:    "FFmpeg Arguments",
 			Run: func(context *EvalContext, command string, token Token) bool {
@@ -1572,7 +1604,7 @@ func main() {
 			},
 		},
 		"inf": {
-			Description: "Append extra input flag",
+			Description: "Append extra input flag for every chunk",
 			Signature:   "<flag:String> --",
 			Category:    "FFmpeg Arguments",
 			Run: func(context *EvalContext, command string, token Token) bool {
