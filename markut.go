@@ -196,6 +196,18 @@ func defaultContext() (EvalContext, bool) {
 	return context, true
 }
 
+func PrintFlagsSummary(flags []Token) {
+	locWidth := 0
+	for _, flag := range flags {
+		// TODO: Loc.String() should include the extra ":", but that requires a huge refactoring in all the places where call it explicitly or implicitly
+		locWidth = max(locWidth, len(flag.Loc.String()) + 1)
+	}
+	// TODO: merge together parameters defined on the same line
+	for _, flag := range flags {
+		fmt.Printf("%-*s %s\n", locWidth, flag.Loc.String() + ":", string(flag.Text))
+	}
+}
+
 func (context EvalContext) PrintSummary() error {
 	fmt.Printf(">>> Main Output Parameters:\n")
 	if context.VideoCodec != nil {
@@ -219,19 +231,14 @@ func (context EvalContext) PrintSummary() error {
 		fmt.Printf("Audio Bitrate: %s (Default)\n", DefaultAudioBitrate)
 	}
 	fmt.Println()
-	// TODO: merge together parameters defined on the same line
 	if len(context.ExtraInFlags) > 0 {
 		fmt.Printf(">>> Extra Input Parameters:\n")
-		for _, inFlag := range context.ExtraInFlags {
-			fmt.Printf("%s: %s\n", inFlag.Loc, string(inFlag.Text))
-		}
+		PrintFlagsSummary(context.ExtraInFlags)
 		fmt.Println()
 	}
 	if len(context.ExtraOutFlags) > 0 {
 		fmt.Printf(">>> Extra Output Parameters:\n")
-		for _, outFlag := range context.ExtraOutFlags {
-			fmt.Printf("%s: %s\n", outFlag.Loc, string(outFlag.Text))
-		}
+		PrintFlagsSummary(context.ExtraOutFlags)
 		fmt.Println()
 	}
 	TwitchVodFileRegexp := "([0-9]+)-[0-9a-f\\-]+\\.mp4"
