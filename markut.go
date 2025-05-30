@@ -196,12 +196,17 @@ func defaultContext() (EvalContext, bool) {
 	return context, true
 }
 
-func PrintFlagsSummary(flags []Token) {
+func MaxLocWidthPlusOne(tokens []Token) int {
 	locWidth := 0
-	for _, flag := range flags {
+	for _, token := range tokens {
 		// TODO: Loc.String() should include the extra ":", but that requires a huge refactoring in all the places where call it explicitly or implicitly
-		locWidth = max(locWidth, len(flag.Loc.String()) + 1)
+		locWidth = max(locWidth, len(token.Loc.String()) + 1)
 	}
+	return locWidth
+}
+
+func PrintFlagsSummary(flags []Token) {
+	locWidth := MaxLocWidthPlusOne(flags)
 	// TODO: merge together parameters defined on the same line
 	for _, flag := range flags {
 		fmt.Printf("%-*s %s\n", locWidth, flag.Loc.String() + ":", string(flag.Text))
@@ -244,12 +249,13 @@ func (context EvalContext) PrintSummary() error {
 	TwitchVodFileRegexp := "([0-9]+)-[0-9a-f\\-]+\\.mp4"
 	re := regexp.MustCompile(TwitchVodFileRegexp)
 	fmt.Printf(">>> Twitch Chat Logs (Detected by regex `%s`)\n", TwitchVodFileRegexp)
+	locWidth := MaxLocWidthPlusOne(context.inputPathLog)
 	for _, inputPath := range context.inputPathLog {
 		match := re.FindStringSubmatch(string(inputPath.Text))
 		if len(match) > 0 {
-			fmt.Printf("%s: https://www.twitchchatdownloader.com/video/%s\n", inputPath.Loc, match[1])
+			fmt.Printf("%-*s https://www.twitchchatdownloader.com/video/%s\n", locWidth, inputPath.Loc.String() + ":", match[1])
 		} else {
-			fmt.Printf("%s: NO MATCH\n", inputPath.Loc)
+			fmt.Printf("%-*s NO MATCH\n", locWidth, inputPath.Loc.String() + ":")
 		}
 	}
 	fmt.Println()
