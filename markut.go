@@ -196,7 +196,16 @@ func defaultContext() (EvalContext, bool) {
 	return context, true
 }
 
-func MaxLocWidthPlusOne(tokens []Token) int {
+func MaxChunksLocWidthPlusOne(chunks []Chunk) int {
+	locWidth := 0
+	for _, chunk := range chunks {
+		// TODO: Loc.String() should include the extra ":", but that requires a huge refactoring in all the places where call it explicitly or implicitly
+		locWidth = max(locWidth, len(chunk.Loc.String()) + 1)
+	}
+	return locWidth
+}
+
+func MaxTokensLocWidthPlusOne(tokens []Token) int {
 	locWidth := 0
 	for _, token := range tokens {
 		// TODO: Loc.String() should include the extra ":", but that requires a huge refactoring in all the places where call it explicitly or implicitly
@@ -206,7 +215,7 @@ func MaxLocWidthPlusOne(tokens []Token) int {
 }
 
 func PrintFlagsSummary(flags []Token) {
-	locWidth := MaxLocWidthPlusOne(flags)
+	locWidth := MaxTokensLocWidthPlusOne(flags)
 	// TODO: merge together parameters defined on the same line
 	for _, flag := range flags {
 		fmt.Printf("%-*s %s\n", locWidth, flag.Loc.String() + ":", string(flag.Text))
@@ -249,7 +258,7 @@ func (context EvalContext) PrintSummary() error {
 	TwitchVodFileRegexp := "([0-9]+)-[0-9a-f\\-]+\\.mp4"
 	re := regexp.MustCompile(TwitchVodFileRegexp)
 	fmt.Printf(">>> Twitch Chat Logs (Detected by regex `%s`)\n", TwitchVodFileRegexp)
-	locWidth := MaxLocWidthPlusOne(context.inputPathLog)
+	locWidth := MaxTokensLocWidthPlusOne(context.inputPathLog)
 	for _, inputPath := range context.inputPathLog {
 		match := re.FindStringSubmatch(string(inputPath.Text))
 		if len(match) > 0 {
@@ -259,13 +268,14 @@ func (context EvalContext) PrintSummary() error {
 		}
 	}
 	fmt.Println()
+	locWidth = MaxChunksLocWidthPlusOne(context.chunks)
 	fmt.Printf(">>> Cuts (%d):\n", max(len(context.chunks)-1, 0))
 	var fullLength Millis = 0
 	var finishedLength Millis = 0
 	var renderedLength Millis = 0
 	for i, chunk := range context.chunks {
 		if i < len(context.chunks)-1 {
-			fmt.Printf("%s: Cut %d - %s\n", chunk.Loc, i, millisToTs(fullLength+chunk.Duration()))
+			fmt.Printf("%-*s Cut %d - %s\n", locWidth, chunk.Loc.String() + ":", i, millisToTs(fullLength+chunk.Duration()))
 		}
 		fullLength += chunk.Duration()
 		if !chunk.Unfinished {
@@ -286,7 +296,7 @@ func (context EvalContext) PrintSummary() error {
 		if rendered {
 			checkMark = "[x]"
 		}
-		fmt.Printf("%s: %s Chunk %d - %s -> %s (Duration: %s)\n", chunk.Loc, checkMark, index, millisToTs(chunk.Start), millisToTs(chunk.End), millisToTs(chunk.Duration()))
+		fmt.Printf("%-*s %s Chunk %d - %s -> %s (Duration: %s)\n", locWidth, chunk.Loc.String() + ":", checkMark, index, millisToTs(chunk.Start), millisToTs(chunk.End), millisToTs(chunk.Duration()))
 		// TODO: Print extra output flags of the chunk
 	}
 	fmt.Println()
