@@ -1657,6 +1657,36 @@ func main() {
 				return true
 			},
 		},
+		"swap": {
+			Description: "Swap two argument on top of the stack",
+			Signature:   "<b:Type2> <a:Type1> -- <a:Type1> <b:Type2>",
+			Category:    "Stack",
+			Run: func(context *EvalContext, command string, token Token) bool {
+				arity := 2
+				if len(context.argsStack) < arity {
+					fmt.Printf("%s: Expected %d arguments but got %d", token.Loc, arity, len(context.argsStack))
+					return false
+				}
+				n := len(context.argsStack)
+				context.argsStack[n-1], context.argsStack[n-2] = context.argsStack[n-2], context.argsStack[n-1];
+				return true
+			},
+		},
+		"drop": {
+			Description: "Drop the argument on top of the stack",
+			Signature:   "<a:Type1> --",
+			Category:    "Stack",
+			Run: func(context *EvalContext, command string, token Token) bool {
+				arity := 1
+				if len(context.argsStack) < arity {
+					fmt.Printf("%s: Expected %d arguments but got %d", token.Loc, arity, len(context.argsStack))
+					return false
+				}
+				n := len(context.argsStack)
+				context.argsStack = context.argsStack[:n-1];
+				return true
+			},
+		},
 		"dup": {
 			Description: "Duplicate the argument on top of the stack",
 			Signature:   "<a:Type1> -- <a:Type1> <a:Type1>",
