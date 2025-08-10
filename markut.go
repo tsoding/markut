@@ -275,7 +275,7 @@ func (context EvalContext) PrintSummary() error {
 	var renderedLength Millis = 0
 	for i, chunk := range context.chunks {
 		if i < len(context.chunks)-1 {
-			fmt.Printf("%-*s Cut %d - %s\n", locWidth, chunk.Loc.String() + ":", i, millisToTs(fullLength+chunk.Duration()))
+			fmt.Printf("%-*s Cut %2d - %s\n", locWidth, chunk.Loc.String() + ":", i, millisToTs(fullLength+chunk.Duration()))
 		}
 		fullLength += chunk.Duration()
 		if !chunk.Unfinished {
@@ -296,7 +296,7 @@ func (context EvalContext) PrintSummary() error {
 		if rendered {
 			checkMark = "[x]"
 		}
-		fmt.Printf("%-*s %s Chunk %d - %s -> %s (Duration: %s)\n", locWidth, chunk.Loc.String() + ":", checkMark, index, millisToTs(chunk.Start), millisToTs(chunk.End), millisToTs(chunk.Duration()))
+		fmt.Printf("%-*s %s Chunk %2d - %s -> %s (Duration: %s)\n", locWidth, chunk.Loc.String() + ":", checkMark, index, millisToTs(chunk.Start), millisToTs(chunk.End), millisToTs(chunk.Duration()))
 		// TODO: Print extra output flags of the chunk
 	}
 	fmt.Println()
