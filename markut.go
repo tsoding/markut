@@ -214,6 +214,15 @@ func MaxTokensLocWidthPlusOne(tokens []Token) int {
 	return locWidth
 }
 
+func MaxChaptersLocWidthPlusOne(chapters []Chapter) int {
+	locWidth := 0
+	for _, chapter := range chapters {
+		// TODO: Loc.String() should include the extra ":", but that requires a huge refactoring in all the places where call it explicitly or implicitly
+		locWidth = max(locWidth, len(chapter.Loc.String()) + 1)
+	}
+	return locWidth
+}
+
 func PrintFlagsSummary(flags []Token) {
 	locWidth := MaxTokensLocWidthPlusOne(flags)
 	// TODO: merge together parameters defined on the same line
@@ -301,8 +310,32 @@ func (context EvalContext) PrintSummary() error {
 	}
 	fmt.Println()
 	fmt.Printf(">>> YouTube Chapters (%d):\n", len(context.chapters))
-	for _, chapter := range context.chapters {
-		fmt.Printf("- %s - %s\n", millisToYouTubeTs(chapter.Timestamp), chapter.Label)
+	maxLength := Millis(0);
+	for i, chapter := range context.chapters {
+		if i > 0 {
+			length := chapter.Timestamp - context.chapters[i - 1].Timestamp;
+			maxLength = max(maxLength, length)
+		}
+	}
+	locWidth = MaxChaptersLocWidthPlusOne(context.chapters)
+	for i, chapter := range context.chapters {
+		var length Millis;
+		if i + 1 < len(context.chapters) {
+			length = context.chapters[i + 1].Timestamp;
+		} else {
+			length = fullLength;
+		}
+		length -= chapter.Timestamp;
+		barMax := int64(18);
+		barCur := barMax*int64(length)/int64(maxLength)
+		bar := strings.Builder{}
+		for i := int64(0); i < barCur; i += 1 {
+			bar.WriteString("#");
+		}
+		for i := barCur; i < barMax; i += 1 {
+			bar.WriteString(".");
+		}
+		fmt.Printf("%-*s [%s] %s - %s\n", locWidth, chapter.Loc.String() + ":", bar.String(), millisToYouTubeTs(chapter.Timestamp), chapter.Label)
 	}
 	fmt.Println()
 	fmt.Printf(">>> Length:\n")
