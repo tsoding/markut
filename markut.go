@@ -312,10 +312,14 @@ func (context EvalContext) PrintSummary() error {
 	fmt.Printf(">>> YouTube Chapters (%d):\n", len(context.chapters))
 	maxLength := Millis(0);
 	for i, chapter := range context.chapters {
-		if i > 0 {
-			length := chapter.Timestamp - context.chapters[i - 1].Timestamp;
-			maxLength = max(maxLength, length)
+		var length Millis;
+		if i + 1 < len(context.chapters) {
+			length = context.chapters[i + 1].Timestamp;
+		} else {
+			length = fullLength;
 		}
+		length -= chapter.Timestamp;
+		maxLength = max(maxLength, length)
 	}
 	locWidth = MaxChaptersLocWidthPlusOne(context.chapters)
 	for i, chapter := range context.chapters {
