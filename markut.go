@@ -310,36 +310,9 @@ func (context EvalContext) PrintSummary() error {
 	}
 	fmt.Println()
 	fmt.Printf(">>> YouTube Chapters (%d):\n", len(context.chapters))
-	maxLength := Millis(0);
-	for i, chapter := range context.chapters {
-		var length Millis;
-		if i + 1 < len(context.chapters) {
-			length = context.chapters[i + 1].Timestamp;
-		} else {
-			length = fullLength;
-		}
-		length -= chapter.Timestamp;
-		maxLength = max(maxLength, length)
-	}
 	locWidth = MaxChaptersLocWidthPlusOne(context.chapters)
-	for i, chapter := range context.chapters {
-		var length Millis;
-		if i + 1 < len(context.chapters) {
-			length = context.chapters[i + 1].Timestamp;
-		} else {
-			length = fullLength;
-		}
-		length -= chapter.Timestamp;
-		barMax := int64(18);
-		barCur := barMax*int64(length)/int64(maxLength)
-		bar := strings.Builder{}
-		for i := int64(0); i < barCur; i += 1 {
-			bar.WriteString("#");
-		}
-		for i := barCur; i < barMax; i += 1 {
-			bar.WriteString(".");
-		}
-		fmt.Printf("%-*s [%s] %s - %s\n", locWidth, chapter.Loc.String() + ":", bar.String(), millisToYouTubeTs(chapter.Timestamp), chapter.Label)
+	for _, chapter := range context.chapters {
+		fmt.Printf("%-*s - %s - %s\n", locWidth, chapter.Loc.String() + ":", millisToYouTubeTs(chapter.Timestamp), chapter.Label)
 	}
 	fmt.Println()
 	fmt.Printf(">>> Length:\n")
