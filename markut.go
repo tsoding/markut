@@ -547,6 +547,14 @@ func (context *EvalContext) finishEval() bool {
 		}
 	}
 
+	if len(context.chapters) > 0 {
+		first := context.chapters[0]
+		if first.Timestamp > 0 {
+			fmt.Printf("%s: ERROR: first chapter must start at 0:00:00 of the output video. But this one starts at %s (See https://support.google.com/youtube/answer/9884579)\n", first.Loc, millisToTs(first.Timestamp));
+			return false
+		}
+	}
+
 	if len(context.argsStack) > 0 || len(context.chapStack) > 0 {
 		for i := range context.argsStack {
 			fmt.Printf("%s: ERROR: unused argument\n", context.argsStack[i].Loc)
