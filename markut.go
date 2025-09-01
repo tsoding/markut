@@ -1334,6 +1334,37 @@ var Subcommands = map[string]Subcommand{
 			return true
 		},
 	},
+	"chapters": {
+		Description: "Generate YouTube chapters list that is easily copy-pastable to the Video Description",
+		Run: func(commandName string, args []string) bool {
+			subFlag := flag.NewFlagSet(commandName, flag.ContinueOnError)
+			markutPtr := subFlag.String("markut", "MARKUT", "Path to the MARKUT file")
+
+			err := subFlag.Parse(args)
+
+			if err == flag.ErrHelp {
+				return true
+			}
+
+			if err != nil {
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
+				return false
+			}
+
+			context, ok := defaultContext()
+			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
+			if !ok {
+				return false
+			}
+
+			fmt.Printf("Chapters:\n");
+			for _, chapter := range context.chapters {
+				fmt.Printf("- %s - %s\n", millisToYouTubeTs(chapter.Timestamp), chapter.Label)
+			}
+
+			return true
+		},
+	},
 }
 
 func usage() {
