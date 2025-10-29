@@ -1289,6 +1289,10 @@ var Subcommands = map[string]Subcommand{
 					var color string
 					if cursor != nil {
 						color = cursor.(string)
+						// Avoid generating dark user color
+						if color == "#000000" {
+							color = "#0000FF"
+						}
 					} else {
 						// Taken from https://discuss.dev.twitch.com/t/default-user-color-in-chat/385
 						// I don't know if it's still accurate, but I don't care, we just need some sort of
