@@ -150,7 +150,10 @@ type EvalContext struct {
 	inputPathLog []Token
 	outputPath   string
 	chatLog      []ChatMessageGroup
+	chatOffset   Millis
+	chatsLoaded  int
 	chunks       []Chunk
+	chunksDefinedForCurrentInput int
 	chapters     []Chapter
 	cuts         []Cut
 
@@ -333,7 +336,7 @@ func (context EvalContext) containsChunkWithName(filePath string) bool {
 
 // IMPORTANT! chatLog is assumed to be sorted by TimeOffset.
 func sliceChatLog(chatLog []ChatMessageGroup, start, end Millis) []ChatMessageGroup {
-	// TODO: use Binary Search for a speed up on big chat logs
+	// TODO: use Binary Search for a speed up on big chat logs when the performance becomes a problem
 	lower := 0
 	for lower < len(chatLog) && chatLog[lower].TimeOffset < start {
 		lower += 1
@@ -349,6 +352,7 @@ func sliceChatLog(chatLog []ChatMessageGroup, start, end Millis) []ChatMessageGr
 }
 
 // IMPORTANT! chatLog is assumed to be sorted by TimeOffset.
+// Groups messages with equal timestamps
 func compressChatLog(chatLog []ChatMessageGroup) []ChatMessageGroup {
 	result := []ChatMessageGroup{}
 	for i := range chatLog {
@@ -1413,20 +1417,26 @@ func main() {
 					fmt.Printf("%s: ERROR: could not load the chat logs: %s\n", path.Loc, err)
 					return false
 				}
+				context.chatOffset = 0
+				context.chatsLoaded += 1
 				return true
 			},
 		},
-		"chat_offset": {
-			Description: "Offsets the timestamps of the currently loaded chat log$SPOILER$ by removing all the messages between `start` and `end` Timestamps",
+		"chat_pin": {
+			Description: "Pins the chat timestamp to the specific video timestamp$SPOILER$ for the currently loaded with the `chat` command chat log.",
 			Category:    "Chat",
-			Signature:   "<start:Timestamp> <end:Timestamp> --",
+			Signature:   "<video:Timestamp> <chat:Timestamp> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
-				// // TODO: this check does not make any sense when there are several chat commands
-				// //   But I still want to have some sort of sanity check for chat_offsets
-				// if len(context.chunks) > 0  {
-				// 	fmt.Printf("%s: ERROR: chat offset should be applied after `chat` commands but before any `chunks` commands. This is due to `chunk` commands making copies of the chat slices that are not affected by the consequent chat offsets\n", token.Loc);
-				// 	return false;
-				// }
+				if context.chatsLoaded == 0 {
+					fmt.Printf("%s: ERROR: chat pins should be applied after a `chat` command. Otherwise they are applied to nothing.\n", token.Loc)
+					return false
+				}
+				if context.chunksDefinedForCurrentInput > 0  {
+					fmt.Printf("%s: ERROR: chat pins should be applied before any `chunk` commands within a single `input`. This is due to `chunk` commands making copies of the chat slices that are not affected by the consequent chat pins\n", token.Loc);
+					return false
+				}
+				// TODO: it's important that chat offsets are applied in the sorted order and do not overlap.
+				// Maybe the language should enforce that somehow.
 
 				args, err := context.typeCheckArgs(token.Loc, TokenTimestamp, TokenTimestamp)
 				if err != nil {
@@ -1435,34 +1445,33 @@ func main() {
 					return false
 				}
 
-				start := args[1]
-				end := args[0]
+				video := args[1]
+				chat  := args[0]
 
-				if start.Timestamp < 0 {
-					fmt.Printf("%s: ERROR: the start of the chat offset is negative %s\n", start.Loc, millisToTs(start.Timestamp))
+				if video.Timestamp < 0 {
+					fmt.Printf("%s: ERROR: the video timestamp of the chat pin is negative %s\n", video.Loc, millisToTs(video.Timestamp))
 					return false
 				}
 
-				if end.Timestamp < 0 {
-					fmt.Printf("%s: ERROR: the end of the chat offset is negative %s\n", end.Loc, millisToTs(end.Timestamp))
-					return false
-				}
-
-				if start.Timestamp > end.Timestamp {
-					fmt.Printf("%s: ERROR: the end of the chat offset %s is earlier than its start %s\n", end.Loc, millisToTs(end.Timestamp), millisToTs(start.Timestamp))
-					fmt.Printf("%s: NOTE: the start is located here\n", start.Loc)
+				if chat.Timestamp < 0 {
+					fmt.Printf("%s: ERROR: the chat timestamp of the chat pin is negative %s\n", chat.Loc, millisToTs(chat.Timestamp))
 					return false
 				}
 
 				chatLen := len(context.chatLog)
 				if chatLen > 0 {
-					last := context.chatLog[chatLen-1].TimeOffset
-					before := sliceChatLog(context.chatLog, 0, start.Timestamp)
-					after := sliceChatLog(context.chatLog, end.Timestamp, last)
-					delta := end.Timestamp - start.Timestamp
+					last   := context.chatLog[chatLen-1].TimeOffset
+					video  := video.Timestamp
+					chat   := chat.Timestamp - context.chatOffset
+					// TODO: I'm not sure what's the best way to handle the case when `chat <= video`.
+					// Do we just cut out the messages between `chat` and `video` or not?
+					delta  := chat - video
+					before := sliceChatLog(context.chatLog, 0, video)
+					after  := sliceChatLog(context.chatLog, chat, last)
 					for i := range after {
-						after[i].TimeOffset -= delta
+						after[i].TimeOffset = after[i].TimeOffset - delta
 					}
+					context.chatOffset += delta
 					context.chatLog = append(before, after...)
 				}
 
@@ -1475,6 +1484,7 @@ func main() {
 			Signature:   "--",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				context.chatLog = []ChatMessageGroup{}
+				context.chatOffset = 0
 				return true
 			},
 		},
@@ -1535,8 +1545,8 @@ func main() {
 				}
 
 				context.chapOffset += chunk.End - chunk.Start
-
 				context.chapStack = []Chapter{}
+				context.chunksDefinedForCurrentInput += 1
 				return true
 			},
 		},
@@ -1774,6 +1784,7 @@ func main() {
 				}
 				context.inputPath = string(path.Text)
 				context.inputPathLog = append(context.inputPathLog, path)
+				context.chunksDefinedForCurrentInput = 0
 				return true
 			},
 		},

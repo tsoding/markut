@@ -3,3 +3,5 @@
 *.txt
 markut
 markut.exe
+TAGS
+.build/
