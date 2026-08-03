@@ -140,7 +140,7 @@ func (context *EvalContext) typeCheckArgs(loc Loc, signature ...TokenKind) (args
 	return
 }
 
-type Range struct {
+type Cut struct {
 	startLoc    Loc
 	startOffset Millis
 	startChunk  int
@@ -160,7 +160,7 @@ type EvalContext struct {
 	chunks        []Chunk
 	chunksDefinedForCurrentInput int
 	chapters      []Chapter
-	ranges        []Range
+	cuts          []Cut
 
 	argsStack     []Token
 	chapStack     []Chapter
@@ -548,9 +548,9 @@ func (context *EvalContext) finishEval() bool {
 		ok = false
 	}
 
-	for i := range context.ranges {
-		if !context.ranges[i].closed {
-			fmt.Printf("%s: ERROR: unclosed range\n", context.ranges[i].startLoc);
+	for i := range context.cuts {
+		if !context.cuts[i].closed {
+			fmt.Printf("%s: ERROR: unclosed cut\n", context.cuts[i].startLoc);
 			ok = false
 		}
 	}
@@ -771,8 +771,8 @@ var Subcommands = map[string]Subcommand{
 			return true
 		},
 	},
-	"range": {
-		Description: "Render a specific range of the final video",
+	"cut": {
+		Description: "Render all cuts of the final video",
 		Run: func(name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the MARKUT file")
@@ -798,78 +798,78 @@ var Subcommands = map[string]Subcommand{
 				return false;
 			}
 
-			for i, r := range context.ranges {
-				startChunk  := r.startChunk
-				startOffset := r.startOffset
+			for i, cut := range context.cuts {
+				startChunk  := cut.startChunk
+				startOffset := cut.startOffset
 				if startChunk < 0 {
 					startChunk = 0
 					startOffset = context.chunks[startChunk].Duration();
 				}
 				if startOffset > context.chunks[startChunk].Duration() {
-					fmt.Printf("%s: TODO: overflowing start offset is not implemented yet\n", r.startLoc)
+					fmt.Printf("%s: TODO: overflowing start offset is not implemented yet\n", cut.startLoc)
 					return false
 				}
-				endChunk  := r.endChunk
-				endOffset := r.endOffset
+				endChunk  := cut.endChunk
+				endOffset := cut.endOffset
 				if endChunk >= len(context.chunks) {
 					endChunk := len(context.chunks)-1
 					endOffset = context.chunks[endChunk].Duration();
 				}
 				if endOffset > context.chunks[endChunk].Duration() {
-					fmt.Printf("%s: TODO: overflowing end offset is not implemented yet\n", r.endLoc)
+					fmt.Printf("%s: TODO: overflowing end offset is not implemented yet\n", cut.endLoc)
 					return false
 				}
 				if startChunk >= endChunk {
-					fmt.Printf("%s: TODO: we don't handle overlapping start and end chunks\n", r.endLoc);
-					fmt.Printf("%s: TODO: start is here\n", r.startLoc);
+					fmt.Printf("%s: TODO: we don't handle overlapping start and end chunks\n", cut.endLoc);
+					fmt.Printf("%s: TODO: start is here\n", cut.startLoc);
 					return false;
 					// I think this may happen like this
 					// ```markut
-					// 5 range_start
+					// 5 cut_start
 					// 69 420 chunk
-					// 5 range_end
+					// 5 cut_end
 					// ```
 				}
-				var rangeChunks []Chunk
-				rangeChunks = append(rangeChunks, Chunk{
+				var cutChunks []Chunk
+				cutChunks = append(cutChunks, Chunk{
 					Start:     context.chunks[startChunk].End - startOffset,
 					End:       context.chunks[startChunk].End,
 					InputPath: context.chunks[startChunk].InputPath,
 					// TODO: this should probably copy the rest of the properties of the original chunk
 				})
 				for chunk := startChunk + 1; chunk <= endChunk - 1; chunk += 1 {
-					rangeChunks = append(rangeChunks, context.chunks[chunk]);
+					cutChunks = append(cutChunks, context.chunks[chunk]);
 				}
-				rangeChunks = append(rangeChunks, Chunk{
+				cutChunks = append(cutChunks, Chunk{
 					Start:     context.chunks[endChunk].Start,
 					End:       context.chunks[endChunk].Start + endOffset,
 					InputPath: context.chunks[endChunk].InputPath,
 					// TODO: this should probably copy the rest of the properties of the original chunk
 				})
 
-				for _, chunk := range rangeChunks {
+				for _, chunk := range cutChunks {
 					err := ffmpegCutChunk(context, chunk)
 					if err != nil {
 						fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
 					}
 				}
 
-				listPath := fmt.Sprintf("range-%02d-list.txt", i)
-				err = ffmpegGenerateConcatList(rangeChunks, listPath)
+				listPath := fmt.Sprintf("cut-%02d-list.txt", i)
+				err = ffmpegGenerateConcatList(cutChunks, listPath)
 				if err != nil {
-					fmt.Printf("ERROR: Could not generate not generate range concat list %s: %s\n", listPath, err)
+					fmt.Printf("ERROR: Could not generate not generate concat list %s: %s\n", listPath, err)
 					return false
 				}
 
-				rangeOutputPath := fmt.Sprintf("range-%02d.mp4", i)
-				err = ffmpegConcatChunks(listPath, rangeOutputPath)
+				cutOutputPath := fmt.Sprintf("cut-%02d.mp4", i)
+				err = ffmpegConcatChunks(listPath, cutOutputPath)
 				if err != nil {
-					fmt.Printf("ERROR: Could not generate range output file %s: %s\n", rangeOutputPath, err)
+					fmt.Printf("ERROR: Could not generate output file %s: %s\n", cutOutputPath, err)
 					return false
 				}
 
-				fmt.Printf("Generated %s\n", rangeOutputPath)
-				fmt.Printf("%s: NOTE: range is defined in here\n", context.chunks[i].Loc)
+				fmt.Printf("Generated %s\n", cutOutputPath)
+				fmt.Printf("%s: NOTE: cut is defined in here\n", context.cuts[i].endLoc)
 			}
 
 			return true
@@ -1853,8 +1853,8 @@ func main() {
 				return true
 			},
 		},
-		"range_end": {
-			Description: "Define range end for `markut range` command.",
+		"cut_end": {
+			Description: "Define cut end for `markut cut` command.",
 			Category:    "Misc",
 			Signature:   "<end:Timestamp> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
@@ -1866,28 +1866,28 @@ func main() {
 				}
 				offset := args[0]
 
-				if len(context.ranges) == 0 {
-					fmt.Printf("%s: ERROR: no ranges to close\n", token.Loc);
+				if len(context.cuts) == 0 {
+					fmt.Printf("%s: ERROR: no cuts to close\n", token.Loc);
 					return false;
 				}
 
-				previousRange := &context.ranges[len(context.ranges)-1];
-				if previousRange.closed {
-					fmt.Printf("%s: ERROR: no ranges to close\n", token.Loc);
-					fmt.Printf("%s: NOTE: previous range was closed here\n", previousRange.endLoc);
+				previousCut := &context.cuts[len(context.cuts)-1];
+				if previousCut.closed {
+					fmt.Printf("%s: ERROR: no cuts to close\n", token.Loc);
+					fmt.Printf("%s: NOTE: previous cut was closed here\n", previousCut.endLoc);
 					return false;
 				}
 
-				previousRange.closed = true;
-				previousRange.endLoc = token.Loc;
-				previousRange.endChunk = len(context.chunks);
-				previousRange.endOffset = offset.Timestamp;
+				previousCut.closed = true;
+				previousCut.endLoc = token.Loc;
+				previousCut.endChunk = len(context.chunks);
+				previousCut.endOffset = offset.Timestamp;
 
 				return true
 			},
 		},
-		"range_start": {
-			Description: "Define range start for `markut range` command.",
+		"cut_start": {
+			Description: "Define cut start for `markut cut` command.",
 			Category:    "Misc",
 			Signature:   "<start:Timestamp> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
@@ -1899,16 +1899,16 @@ func main() {
 				}
 				offset := args[0]
 
-				if len(context.ranges) > 0 {
-					previousRange := context.ranges[len(context.ranges)-1];
-					if !previousRange.closed {
-						fmt.Printf("%s: ERROR: you are starting a new range before closing the previous one", token.Loc);
-						fmt.Printf("%s: NOTE: the previous range is started here", previousRange.startLoc);
+				if len(context.cuts) > 0 {
+					previousCut := context.cuts[len(context.cuts)-1];
+					if !previousCut.closed {
+						fmt.Printf("%s: ERROR: you are starting a new cut before closing the previous one", token.Loc);
+						fmt.Printf("%s: NOTE: the previous cut is started here", previousCut.startLoc);
 						return false;
 					}
 				}
 
-				context.ranges = append(context.ranges, Range{
+				context.cuts = append(context.cuts, Cut{
 					startLoc:    token.Loc,
 					startChunk:  len(context.chunks) - 1,
 					startOffset: offset.Timestamp,
@@ -1917,7 +1917,7 @@ func main() {
 			},
 		},
 		"cut": {
-			Description: "Equivalent to `<offset> range_start <offset> range_end`.",
+			Description: "Equivalent to `<offset> cut_start <offset> cut_end`.",
 			Category:    "Misc",
 			Signature:   "<offset:Timestamp> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
@@ -1928,7 +1928,7 @@ func main() {
 					return false
 				}
 				offset := args[0]
-				context.ranges = append(context.ranges, Range{
+				context.cuts = append(context.cuts, Cut{
 					startLoc:    token.Loc,
 					startOffset: offset.Timestamp,
 					startChunk:  len(context.chunks) - 1,
