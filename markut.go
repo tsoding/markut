@@ -140,11 +140,6 @@ func (context *EvalContext) typeCheckArgs(loc Loc, signature ...TokenKind) (args
 	return
 }
 
-type Cut struct {
-	chunk int
-	pad   Millis
-}
-
 type Range struct {
 	startLoc    Loc
 	startOffset Millis
@@ -165,7 +160,6 @@ type EvalContext struct {
 	chunks        []Chunk
 	chunksDefinedForCurrentInput int
 	chapters      []Chapter
-	cuts          []Cut
 	ranges        []Range
 
 	argsStack     []Token
@@ -812,7 +806,7 @@ var Subcommands = map[string]Subcommand{
 					startOffset = context.chunks[startChunk].Duration();
 				}
 				if startOffset > context.chunks[startChunk].Duration() {
-					fmt.Printf("%s: TODO: overflowing start offset is not implemented yet", r.startLoc)
+					fmt.Printf("%s: TODO: overflowing start offset is not implemented yet\n", r.startLoc)
 					return false
 				}
 				endChunk  := r.endChunk
@@ -822,7 +816,7 @@ var Subcommands = map[string]Subcommand{
 					endOffset = context.chunks[endChunk].Duration();
 				}
 				if endOffset > context.chunks[endChunk].Duration() {
-					fmt.Printf("%s: TODO: overflowing end offset is not implemented yet", r.endLoc)
+					fmt.Printf("%s: TODO: overflowing end offset is not implemented yet\n", r.endLoc)
 					return false
 				}
 				if startChunk >= endChunk {
@@ -876,81 +870,6 @@ var Subcommands = map[string]Subcommand{
 
 				fmt.Printf("Generated %s\n", rangeOutputPath)
 				fmt.Printf("%s: NOTE: range is defined in here\n", context.chunks[i].Loc)
-			}
-
-			return true
-		},
-	},
-	"cut": {
-		Description: "Render specific cut of the final video",
-		Run: func(name string, args []string) bool {
-			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
-			markutPtr := subFlag.String("markut", "MARKUT", "Path to the MARKUT file")
-
-			err := subFlag.Parse(args)
-			if err == flag.ErrHelp {
-				return true
-			}
-
-			if err != nil {
-				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
-				return false
-			}
-
-			context, ok := defaultContext()
-			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
-			if !ok {
-				return false
-			}
-
-			if len(context.cuts) == 0 {
-				fmt.Printf("ERROR: No cuts are provided. Use `cut` command after a `chunk` command to define a cut\n")
-				return false
-			}
-
-			for _, cut := range context.cuts {
-				if cut.chunk+1 >= len(context.chunks) {
-					fmt.Printf("ERROR: %d is an invalid cut number. There is only %d of them.\n", cut.chunk, len(context.chunks)-1)
-					return false
-				}
-
-				cutChunks := []Chunk{
-					{
-						Start:     context.chunks[cut.chunk].End - cut.pad,
-						End:       context.chunks[cut.chunk].End,
-						InputPath: context.chunks[cut.chunk].InputPath,
-					},
-					{
-						Start:     context.chunks[cut.chunk+1].Start,
-						End:       context.chunks[cut.chunk+1].Start + cut.pad,
-						InputPath: context.chunks[cut.chunk+1].InputPath,
-					},
-				}
-
-				for _, chunk := range cutChunks {
-					err := ffmpegCutChunk(context, chunk)
-					if err != nil {
-						fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
-					}
-				}
-
-				cutListPath := "cut-%02d-list.txt"
-				listPath := fmt.Sprintf(cutListPath, cut.chunk)
-				err = ffmpegGenerateConcatList(cutChunks, listPath)
-				if err != nil {
-					fmt.Printf("ERROR: Could not generate not generate cut concat list %s: %s\n", cutListPath, err)
-					return false
-				}
-
-				cutOutputPath := fmt.Sprintf("cut-%02d.mp4", cut.chunk)
-				err = ffmpegConcatChunks(listPath, cutOutputPath)
-				if err != nil {
-					fmt.Printf("ERROR: Could not generate cut output file %s: %s\n", cutOutputPath, err)
-					return false
-				}
-
-				fmt.Printf("Generated %s\n", cutOutputPath)
-				fmt.Printf("%s: NOTE: cut is defined in here\n", context.chunks[cut.chunk].Loc)
 			}
 
 			return true
@@ -1998,9 +1917,9 @@ func main() {
 			},
 		},
 		"cut": {
-			Description: "Define a new cut for `markut cut` command.",
+			Description: "Equivalent to `<offset> range_start <offset> range_end`.",
 			Category:    "Misc",
-			Signature:   "<padding:Timestamp> --",
+			Signature:   "<offset:Timestamp> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenTimestamp)
 				if err != nil {
@@ -2008,14 +1927,15 @@ func main() {
 					fmt.Printf("%s\n", err)
 					return false
 				}
-				pad := args[0]
-				if len(context.chunks) == 0 {
-					fmt.Printf("%s: ERROR: no chunks defined for a cut\n", token.Loc)
-					return false
-				}
-				context.cuts = append(context.cuts, Cut{
-					chunk: len(context.chunks) - 1,
-					pad:   pad.Timestamp,
+				offset := args[0]
+				context.ranges = append(context.ranges, Range{
+					startLoc:    token.Loc,
+					startOffset: offset.Timestamp,
+					startChunk:  len(context.chunks) - 1,
+					endLoc:      token.Loc,
+					endOffset:   offset.Timestamp,
+					endChunk:    len(context.chunks),
+					closed:      true,
 				})
 				return true
 			},
