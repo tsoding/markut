@@ -145,26 +145,37 @@ type Cut struct {
 	pad   Millis
 }
 
+type Range struct {
+	startLoc    Loc
+	startOffset Millis
+	startChunk  int
+	endLoc      Loc
+	endOffset   Millis
+	endChunk    int
+	closed      bool
+}
+
 type EvalContext struct {
-	inputPath    string
-	inputPathLog []Token
-	outputPath   string
-	chatLog      []ChatMessageGroup
-	chatOffset   Millis
-	chatsLoaded  int
-	chunks       []Chunk
+	inputPath     string
+	inputPathLog  []Token
+	outputPath    string
+	chatLog       []ChatMessageGroup
+	chatOffset    Millis
+	chatsLoaded   int
+	chunks        []Chunk
 	chunksDefinedForCurrentInput int
-	chapters     []Chapter
-	cuts         []Cut
+	chapters      []Chapter
+	cuts          []Cut
+	ranges        []Range
 
-	argsStack  []Token
-	chapStack  []Chapter
-	chapOffset Millis
+	argsStack     []Token
+	chapStack     []Chapter
+	chapOffset    Millis
 
-	VideoCodec   *Token
-	VideoBitrate *Token
-	AudioCodec   *Token
-	AudioBitrate *Token
+	VideoCodec    *Token
+	VideoBitrate  *Token
+	AudioCodec    *Token
+	AudioBitrate  *Token
 
 	ExtraOutFlags []Token
 	ExtraInFlags  []Token
@@ -514,13 +525,14 @@ func (context *EvalContext) evalMarkutFile(loc *Loc, path string, ignoreIfMissin
 }
 
 func (context *EvalContext) finishEval() bool {
+	ok := true;
 	for i := 0; i+1 < len(context.chapters); i += 1 {
 		duration := context.chapters[i+1].Timestamp - context.chapters[i].Timestamp
 		// TODO: angled brackets are not allowed on YouTube. Let's make `chapters` check for that too.
 		if duration < MinYouTubeChapterDuration {
 			fmt.Printf("%s: ERROR: the chapter \"%s\" has duration %s which is shorter than the minimal allowed YouTube chapter duration which is %s (See https://support.google.com/youtube/answer/9884579)\n", context.chapters[i].Loc, context.chapters[i].Label, millisToTs(duration), millisToTs(MinYouTubeChapterDuration))
 			fmt.Printf("%s: NOTE: the chapter ends here\n", context.chapters[i+1].Loc)
-			return false
+			ok = false
 		}
 	}
 
@@ -528,7 +540,7 @@ func (context *EvalContext) finishEval() bool {
 		first := context.chapters[0]
 		if first.Timestamp > 0 {
 			fmt.Printf("%s: ERROR: first chapter must start at 0:00:00 of the output video. But this one starts at %s (See https://support.google.com/youtube/answer/9884579)\n", first.Loc, millisToTs(first.Timestamp));
-			return false
+			ok = false
 		}
 	}
 
@@ -539,10 +551,17 @@ func (context *EvalContext) finishEval() bool {
 		for i := range context.chapStack {
 			fmt.Printf("%s: ERROR: unused chapter\n", context.chapStack[i].Loc)
 		}
-		return false
+		ok = false
 	}
 
-	return true
+	for i := range context.ranges {
+		if !context.ranges[i].closed {
+			fmt.Printf("%s: ERROR: unclosed range\n", context.ranges[i].startLoc);
+			ok = false
+		}
+	}
+
+	return ok
 }
 
 func ffmpegPathToBin() (ffmpegPath string) {
@@ -754,6 +773,110 @@ var Subcommands = map[string]Subcommand{
 				return false
 			}
 			fmt.Printf("Generated %s\n", *outputPtr)
+
+			return true
+		},
+	},
+	"range": {
+		Description: "Render a specific range of the final video",
+		Run: func(name string, args []string) bool {
+			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
+			markutPtr := subFlag.String("markut", "MARKUT", "Path to the MARKUT file")
+
+			err := subFlag.Parse(args)
+			if err == flag.ErrHelp {
+				return true
+			}
+
+			if err != nil {
+				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
+				return false
+			}
+
+			context, ok := defaultContext()
+			ok = ok && context.evalMarkutFile(nil, *markutPtr, false) && context.finishEval()
+			if !ok {
+				return false
+			}
+
+			if len(context.chunks) == 0 {
+				fmt.Printf("ERROR: No chunks defined. Nothing could be rendered I guess.\n");
+				return false;
+			}
+
+			for i, r := range context.ranges {
+				startChunk  := r.startChunk
+				startOffset := r.startOffset
+				if startChunk < 0 {
+					startChunk = 0
+					startOffset = context.chunks[startChunk].Duration();
+				}
+				if startOffset > context.chunks[startChunk].Duration() {
+					fmt.Printf("%s: TODO: overflowing start offset is not implemented yet", r.startLoc)
+					return false
+				}
+				endChunk  := r.endChunk
+				endOffset := r.endOffset
+				if endChunk >= len(context.chunks) {
+					endChunk := len(context.chunks)-1
+					endOffset = context.chunks[endChunk].Duration();
+				}
+				if endOffset > context.chunks[endChunk].Duration() {
+					fmt.Printf("%s: TODO: overflowing end offset is not implemented yet", r.endLoc)
+					return false
+				}
+				if startChunk >= endChunk {
+					fmt.Printf("%s: TODO: we don't handle overlapping start and end chunks\n", r.endLoc);
+					fmt.Printf("%s: TODO: start is here\n", r.startLoc);
+					return false;
+					// I think this may happen like this
+					// ```markut
+					// 5 range_start
+					// 69 420 chunk
+					// 5 range_end
+					// ```
+				}
+				var rangeChunks []Chunk
+				rangeChunks = append(rangeChunks, Chunk{
+					Start:     context.chunks[startChunk].End - startOffset,
+					End:       context.chunks[startChunk].End,
+					InputPath: context.chunks[startChunk].InputPath,
+					// TODO: this should probably copy the rest of the properties of the original chunk
+				})
+				for chunk := startChunk + 1; chunk <= endChunk - 1; chunk += 1 {
+					rangeChunks = append(rangeChunks, context.chunks[chunk]);
+				}
+				rangeChunks = append(rangeChunks, Chunk{
+					Start:     context.chunks[endChunk].Start,
+					End:       context.chunks[endChunk].Start + endOffset,
+					InputPath: context.chunks[endChunk].InputPath,
+					// TODO: this should probably copy the rest of the properties of the original chunk
+				})
+
+				for _, chunk := range rangeChunks {
+					err := ffmpegCutChunk(context, chunk)
+					if err != nil {
+						fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
+					}
+				}
+
+				listPath := fmt.Sprintf("range-%02d-list.txt", i)
+				err = ffmpegGenerateConcatList(rangeChunks, listPath)
+				if err != nil {
+					fmt.Printf("ERROR: Could not generate not generate range concat list %s: %s\n", listPath, err)
+					return false
+				}
+
+				rangeOutputPath := fmt.Sprintf("range-%02d.mp4", i)
+				err = ffmpegConcatChunks(listPath, rangeOutputPath)
+				if err != nil {
+					fmt.Printf("ERROR: Could not generate range output file %s: %s\n", rangeOutputPath, err)
+					return false
+				}
+
+				fmt.Printf("Generated %s\n", rangeOutputPath)
+				fmt.Printf("%s: NOTE: range is defined in here\n", context.chunks[i].Loc)
+			}
 
 			return true
 		},
@@ -1185,9 +1308,13 @@ var Subcommands = map[string]Subcommand{
 			sort.Slice(names, func(i, j int) bool {
 				return names[i] < names[j]
 			})
-			sort.SliceStable(names, func(i, j int) bool { // Rare moment in my boring dev life when I actually need a stable sort
+
+			// Rare moment in my boring dev life when I actually need
+			// a stable sort
+			sort.SliceStable(names, func(i, j int) bool {
 				return funcs[names[i]].Category < funcs[names[j]].Category
 			})
+
 			if len(names) > 0 {
 				category := ""
 				for _, name := range names {
@@ -1803,6 +1930,69 @@ func main() {
 					Loc:       args[1].Loc,
 					Label:     string(args[0].Text),
 					Timestamp: args[1].Timestamp,
+				})
+				return true
+			},
+		},
+		"range_end": {
+			Description: "Define range end for `markut range` command.",
+			Category:    "Misc",
+			Signature:   "<end:Timestamp> --",
+			Run: func(context *EvalContext, command string, token Token) bool {
+				args, err := context.typeCheckArgs(token.Loc, TokenTimestamp)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					return false
+				}
+				offset := args[0]
+
+				if len(context.ranges) == 0 {
+					fmt.Printf("%s: ERROR: no ranges to close\n", token.Loc);
+					return false;
+				}
+
+				previousRange := &context.ranges[len(context.ranges)-1];
+				if previousRange.closed {
+					fmt.Printf("%s: ERROR: no ranges to close\n", token.Loc);
+					fmt.Printf("%s: NOTE: previous range was closed here\n", previousRange.endLoc);
+					return false;
+				}
+
+				previousRange.closed = true;
+				previousRange.endLoc = token.Loc;
+				previousRange.endChunk = len(context.chunks);
+				previousRange.endOffset = offset.Timestamp;
+
+				return true
+			},
+		},
+		"range_start": {
+			Description: "Define range start for `markut range` command.",
+			Category:    "Misc",
+			Signature:   "<start:Timestamp> --",
+			Run: func(context *EvalContext, command string, token Token) bool {
+				args, err := context.typeCheckArgs(token.Loc, TokenTimestamp)
+				if err != nil {
+					fmt.Printf("%s: ERROR: type check failed for %s\n", token.Loc, command)
+					fmt.Printf("%s\n", err)
+					return false
+				}
+				offset := args[0]
+
+				if len(context.ranges) > 0 {
+					previousRange := context.ranges[len(context.ranges)-1];
+					if !previousRange.closed {
+						fmt.Printf("%s: ERROR: you are starting a new range before closing the previous one", token.Loc);
+						fmt.Printf("%s: NOTE: the previous range is started here", previousRange.startLoc);
+						return false;
+					}
+				}
+
+				context.ranges = append(context.ranges, Range{
+					startLoc:    token.Loc,
+					startChunk:  len(context.chunks) - 1,
+					startOffset: offset.Timestamp,
 				})
 				return true
 			},
