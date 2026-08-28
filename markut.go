@@ -1004,7 +1004,8 @@ var Subcommands = map[string]Subcommand{
 		Run: func(name string, args []string) bool {
 			chatFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := chatFlag.String("markut", "MARKUT", "Path to the MARKUT file")
-			csvPtr := chatFlag.Bool("csv", false, "Generate the chat using the stupid Twich Chat Downloader CSV format. You can then feed this output to tools like SubChat https://github.com/Kam1k4dze/SubChat")
+			csvPtr := chatFlag.Bool("csv", false, "Generate the chat in the stupid Twich Chat Downloader CSV format. You can then feed this output to tools like SubChat https://github.com/Kam1k4dze/SubChat")
+			yttPtr := chatFlag.Bool("ytt", false, "Generate the chat in ytt format using the SubChat's algorithm: https://github.com/Kam1k4dze/SubChat")
 
 			err := chatFlag.Parse(args)
 
@@ -1014,6 +1015,12 @@ var Subcommands = map[string]Subcommand{
 
 			if err != nil {
 				fmt.Printf("ERROR: Could not parse command line arguments: %s\n", err)
+				return false
+			}
+
+			// It's kinda stupid, but I also want to kinda preserve backward compatibility with my reflexes - rexim
+			if *csvPtr && *yttPtr {
+				fmt.Printf("ERROR: -csv and -ytt cannot be enabled simultaneously\n")
 				return false
 			}
 
@@ -1035,6 +1042,32 @@ var Subcommands = map[string]Subcommand{
 					}
 					cursor += chunk.End - chunk.Start
 				}
+			} else if *yttPtr {
+				chat := []YttChatMessage{}
+				var cursor Millis = 0
+				for _, chunk := range context.chunks {
+					for _, messageGroup := range chunk.ChatLog {
+						timestamp := cursor + messageGroup.TimeOffset - chunk.Start
+						for _, message := range messageGroup.Messages {
+							chat = append(chat, YttChatMessage{
+								time: timestamp,
+								user: User{
+									name: message.Nickname,
+									color: parseHexColor(message.Color),
+								},
+								message: message.Text,
+							})
+						}
+					}
+					cursor += chunk.End - chunk.Start
+				}
+
+				params := DefaultChatParams
+				xml := generateXML(generateBatches(chat, params), params)
+				outputPath := "chat.ytt"
+				ioutil.WriteFile(outputPath, []byte(xml), 0644)
+				fmt.Printf("Generated %v\n", outputPath)
+				// fmt.Print(xml)
 			} else {
 				capacity := 1
 				ring := []ChatMessageGroup{}
