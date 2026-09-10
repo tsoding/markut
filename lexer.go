@@ -9,9 +9,7 @@ import (
 
 type Millis int64
 
-// TODO: we really need more precise error reported for timestamp tokens.
-// Like the diagnostics should point out at specific characters that are
-// incorrect.
+// TASK(20260910-114855): We really need more precise error reported for timestamp tokens.
 
 func parseSsAndMs(s string) (ss int64, ms Millis, err error) {
 	switch comps := strings.Split(s, "."); len(comps) {

@@ -341,7 +341,7 @@ func (context EvalContext) containsChunkWithName(filePath string) bool {
 
 // IMPORTANT! chatLog is assumed to be sorted by TimeOffset.
 func sliceChatLog(chatLog []ChatMessageGroup, start, end Millis) []ChatMessageGroup {
-	// TODO: use Binary Search for a speed up on big chat logs when the performance becomes a problem
+	// TASK(20260910-114950): Use Binary Search in sliceChatLog for a speed up on big chat logs when the performance becomes a problem
 	lower := 0
 	for lower < len(chatLog) && chatLog[lower].TimeOffset < start {
 		lower += 1
@@ -522,7 +522,7 @@ func (context *EvalContext) finishEval() bool {
 	ok := true;
 	for i := 0; i+1 < len(context.chapters); i += 1 {
 		duration := context.chapters[i+1].Timestamp - context.chapters[i].Timestamp
-		// TODO: angled brackets are not allowed on YouTube. Let's make `chapters` check for that too.
+		// TASK(20260910-115009): Angled brackets are not allowed on YouTube. Let's make `markut-chapters` check for that.
 		if duration < MinYouTubeChapterDuration {
 			fmt.Printf("%s: ERROR: the chapter \"%s\" has duration %s which is shorter than the minimal allowed YouTube chapter duration which is %s (See https://support.google.com/youtube/answer/9884579)\n", context.chapters[i].Loc, context.chapters[i].Label, millisToTs(duration), millisToTs(MinYouTubeChapterDuration))
 			fmt.Printf("%s: NOTE: the chapter ends here\n", context.chapters[i+1].Loc)
@@ -560,7 +560,7 @@ func (context *EvalContext) finishEval() bool {
 
 func ffmpegPathToBin() (ffmpegPath string) {
 	ffmpegPath = "ffmpeg"
-	// TODO: replace FFMPEG_PREFIX envar in favor of a func `ffmpeg_prefix` that you have to call in $HOME/.markut
+	// TASK(20260910-115027): Replace `FFMPEG_PREFIX` envar in favor of a func `ffmpeg_prefix` that you have to call in `$HOME/.markut`
 	ffmpegPrefix, ok := os.LookupEnv("FFMPEG_PREFIX")
 	if ok {
 		ffmpegPath = path.Join(ffmpegPrefix, "bin", "ffmpeg")
@@ -573,7 +573,7 @@ func logCmd(name string, args ...string) {
 	chunks = append(chunks, name)
 	for _, arg := range args {
 		if strings.Contains(arg, " ") {
-			// TODO: use proper shell escaping instead of just wrapping with double quotes
+			// TASK(20260910-115048): use proper shell escaping in logCmd instead of just wrapping with double quotes
 			chunks = append(chunks, "\""+arg+"\"")
 		} else {
 			chunks = append(chunks, arg)
@@ -806,7 +806,7 @@ var Subcommands = map[string]Subcommand{
 					startOffset = context.chunks[startChunk].Duration();
 				}
 				if startOffset > context.chunks[startChunk].Duration() {
-					fmt.Printf("%s: TODO: overflowing start offset is not implemented yet\n", cut.startLoc)
+					fmt.Printf("%s: TASK(20260910-115135): overflowing start offset is not implemented yet\n", cut.startLoc)
 					return false
 				}
 				endChunk  := cut.endChunk
@@ -816,12 +816,12 @@ var Subcommands = map[string]Subcommand{
 					endOffset = context.chunks[endChunk].Duration();
 				}
 				if endOffset > context.chunks[endChunk].Duration() {
-					fmt.Printf("%s: TODO: overflowing end offset is not implemented yet\n", cut.endLoc)
+					fmt.Printf("%s: TASK(20260910-115139): overflowing end offset is not implemented yet\n", cut.endLoc)
 					return false
 				}
 				if startChunk >= endChunk {
-					fmt.Printf("%s: TODO: we don't handle overlapping start and end chunks\n", cut.endLoc);
-					fmt.Printf("%s: TODO: start is here\n", cut.startLoc);
+					fmt.Printf("%s: TASK(20260910-115143): we don't handle overlapping start and end chunks\n", cut.endLoc);
+					fmt.Printf("%s: NOTE: start is here\n", cut.startLoc);
 					return false;
 					// I think this may happen like this
 					// ```markut
@@ -2050,7 +2050,5 @@ func main() {
 	}
 }
 
-// TODO: Consider rewritting Markut in C with nob.h
-//   There is no reason for it to be written in go at this point. C+nob.h can do all the tricks.
-//   For the lexing part we can even use https://github.com/tsoding/alexer
-// TODO: Embed git hash into the executable and display it on `markut version`
+// TASK(20260910-114816): Consider rewritting Markut in a better language
+// TASK(20260910-114828): Embed git hash into the executable and display it on `markut version`
