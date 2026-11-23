@@ -2,7 +2,7 @@
 
 - STATUS: OPEN
 - PRIORITY: 100
-- TAGS: scope
+- TAGS:
 
 Like the diagnostics should point out at specific characters that are
 incorrect.

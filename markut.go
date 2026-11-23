@@ -2052,3 +2052,6 @@ func main() {
 
 // TASK(20260910-114816): Consider rewritting Markut in a better language
 // TASK(20260910-114828): Embed git hash into the executable and display it on `markut version`
+// TASK(20261122-194157): Disable chapters through func
+// TASK(20261122-194158): Allow rendering chunks in parallel
+// TASK(20261122-194210): Use hashes to compute chunk names like we do for image cache in sowon2
