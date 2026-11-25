@@ -3,3 +3,5 @@
 - STATUS: OPEN
 - PRIORITY: 100
 - TAGS: scope
+
+Should probably use a better hash function though. Something like sha1.

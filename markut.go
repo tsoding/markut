@@ -1642,7 +1642,24 @@ func main() {
 				return true
 			},
 		},
-		"removed": {
+		"drop_chapter": {
+			Description: "Remove the last defined chapter$SPOILER$. Useful for disabling a certain chapter, so you can reenable it later if needed.",
+			Signature: "--",
+			Category: "Chapter",
+			Run: func(context *EvalContext, command string, token Token) bool {
+				if len(context.chapStack) > 0 {
+					context.chapStack = context.chapStack[:len(context.chapStack)-1]
+					return true
+				}
+				if len(context.chapters) > 0 {
+					context.chapters = context.chapters[:len(context.chapters)-1]
+					return true
+				}
+				fmt.Printf("%s: ERROR: no chapters defined for removal\n", token.Loc)
+				return false
+			},
+		},
+		"drop_chunk": {
 			Description: "Remove the last defined chunk$SPOILER$. Useful for disabling a certain chunk, so you can reenable it later if needed.",
 			Signature:   "--",
 			Category:    "Chunk",
@@ -1869,7 +1886,7 @@ func main() {
 		},
 		"chapter": {
 			Description: "Define a new YouTube chapter for within a chunk for `markut summary` command.",
-			Category:    "Misc",
+			Category:    "Chapter",
 			Signature:   "<timestamp:Timestamp> <title:String> --",
 			Run: func(context *EvalContext, command string, token Token) bool {
 				args, err := context.typeCheckArgs(token.Loc, TokenString, TokenTimestamp)
