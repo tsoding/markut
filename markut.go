@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"crypto/sha1"
 )
 
 func decomposeMillis(millis Millis) (hh int64, mm int64, ss int64, ms int64, sign string) {
@@ -75,35 +76,32 @@ type Chunk struct {
 const ChunksFolder = "chunks"
 const TwitchChatDownloaderCSVHeader = "time,user_name,user_color,message"
 
-func (chunk Chunk) Name() string {
-	inputPath := strings.ReplaceAll(chunk.InputPath, "/", "_")
-	sb := strings.Builder{}
-	fmt.Fprintf(&sb, "%s/%s-%09d-%09d", ChunksFolder, inputPath, chunk.Start, chunk.End)
-	if chunk.Blur {
-		sb.WriteString("-blur")
-	}
-	for _, outFlag := range chunk.ExtraOutFlags {
-		sb.WriteString(strings.ReplaceAll(string(outFlag.Text), "/", "_"))
-	}
-	sb.WriteString(".mp4")
-	return sb.String()
+func (chunk Chunk) Hash(context EvalContext) string {
+	// TASK(20261125-211232): Some sort of subcommand that checks that none of the chunk hashes collide with eath other
+	return fmt.Sprintf("%x", sha1.Sum([]byte(strings.Join(ffmpegArgsToCutChunk(context, chunk), "\n"))));
+}
+
+func (chunk Chunk) Name(context EvalContext) string {
+	return fmt.Sprintf("%s/%s.mp4", ChunksFolder, chunk.Hash(context));
 }
 
 func (chunk Chunk) Duration() Millis {
 	return chunk.End - chunk.Start
 }
 
-func (chunk Chunk) Rendered() (bool, error) {
-	_, err := os.Stat(chunk.Name())
+func (chunk Chunk) Rendered(context EvalContext) bool {
+	name := chunk.Name(context)
+	_, err := os.Stat(name)
 	if err == nil {
-		return true, nil
+		return true
 	}
 
 	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
+		return false
 	}
 
-	return false, err
+	fmt.Printf("ERROR: %s: %v\n", name, err);
+	return false
 }
 
 type Chapter struct {
@@ -239,6 +237,8 @@ func PrintFlagsSummary(flags []Token) {
 	}
 }
 
+const ChunkHashAbbrev = 11
+
 func (context EvalContext) PrintSummary() error {
 	fmt.Printf(">>> Main Output Parameters:\n")
 	if context.VideoCodec != nil {
@@ -298,23 +298,28 @@ func (context EvalContext) PrintSummary() error {
 		if !chunk.Unfinished {
 			finishedLength += chunk.Duration()
 		}
-		if _, err := os.Stat(chunk.Name()); err == nil {
+		if _, err := os.Stat(chunk.Name(context)); err == nil {
 			renderedLength += chunk.Duration()
 		}
 	}
 	fmt.Println()
 	fmt.Printf(">>> Chunks (%d):\n", len(context.chunks))
 	for index, chunk := range context.chunks {
-		rendered, err := chunk.Rendered()
-		if err != nil {
-			return nil
-		}
+		rendered := chunk.Rendered(context)
 		checkMark := "[ ]"
 		if rendered {
 			checkMark = "[x]"
 		}
-		fmt.Printf("%-*s %s Chunk %2d - %s -> %s (Duration: %s)\n", locWidth, chunk.Loc.String() + ":", checkMark, index, millisToTs(chunk.Start), millisToTs(chunk.End), millisToTs(chunk.Duration()))
-		// TODO: Print extra output flags of the chunk
+		fmt.Printf("%-*s %s %s Chunk %2d - %s -> %s (Duration: %s)\n",
+			locWidth,
+			chunk.Loc.String() + ":",
+			checkMark,
+			chunk.Hash(context)[:ChunkHashAbbrev],
+			index,
+			millisToTs(chunk.Start),
+			millisToTs(chunk.End),
+			millisToTs(chunk.Duration()))
+		// TODO: Print extra output flags of the chunk somehow (not sure if have enough space for that though)
 	}
 	fmt.Println()
 	fmt.Printf(">>> YouTube Chapters (%d):\n", len(context.chapters))
@@ -332,7 +337,7 @@ func (context EvalContext) PrintSummary() error {
 
 func (context EvalContext) containsChunkWithName(filePath string) bool {
 	for _, chunk := range context.chunks {
-		if chunk.Name() == filePath {
+		if chunk.Name(context) == filePath {
 			return true
 		}
 	}
@@ -586,33 +591,7 @@ func millisToSecsForFFmpeg(millis Millis) string {
 	return fmt.Sprintf("%d.%03d", millis/1000, millis%1000)
 }
 
-func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
-	rendered, err := chunk.Rendered()
-	if err != nil {
-		return err
-	}
-
-	if rendered {
-		fmt.Printf("INFO: %s is already rendered\n", chunk.Name())
-		return nil
-	}
-
-	err = os.MkdirAll(ChunksFolder, 0755)
-	if err != nil {
-		return err
-	}
-
-	ffmpeg := ffmpegPathToBin()
-	args := []string{}
-
-	// We always rerender unfinished-chunk.mp4, because it might still
-	// exist due to the rendering erroring out or canceling. It's a
-	// temporary file that is copied and renamed to the chunks/ folder
-	// after the rendering has finished successfully. The successfully
-	// rendered chunks are not being rerendered due to the check at
-	// the beginning of the function.
-	args = append(args, "-y")
-
+func ffmpegArgsToCutChunk(context EvalContext, chunk Chunk) (args []string) {
 	args = append(args, "-ss", millisToSecsForFFmpeg(chunk.Start))
 	for _, inFlag := range context.ExtraInFlags {
 		args = append(args, string(inFlag.Text))
@@ -649,6 +628,31 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
 	for _, outFlag := range chunk.ExtraOutFlags {
 		args = append(args, string(outFlag.Text))
 	}
+	return
+}
+
+func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
+	if chunk.Rendered(context) {
+		fmt.Printf("INFO: %s is already rendered\n", chunk.Name(context))
+		return nil
+	}
+
+	err := os.MkdirAll(ChunksFolder, 0755)
+	if err != nil {
+		return err
+	}
+
+	ffmpeg := ffmpegPathToBin()
+	args := []string{}
+
+	// We always rerender unfinished-chunk.mp4, because it might still
+	// exist due to the rendering erroring out or canceling. It's a
+	// temporary file that is copied and renamed to the chunks/ folder
+	// after the rendering has finished successfully. The successfully
+	// rendered chunks are not being rerendered due to the check at
+	// the beginning of the function.
+	args = append(args, "-y")
+	args = append(args, ffmpegArgsToCutChunk(context, chunk)...)
 	unfinishedChunkName := "unfinished-chunk.mp4"
 	args = append(args, unfinishedChunkName)
 
@@ -662,8 +666,8 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
 		return err
 	}
 
-	fmt.Printf("INFO: Rename %s -> %s\n", unfinishedChunkName, chunk.Name())
-	return os.Rename(unfinishedChunkName, chunk.Name())
+	fmt.Printf("INFO: Rename %s -> %s\n", unfinishedChunkName, chunk.Name(context))
+	return os.Rename(unfinishedChunkName, chunk.Name(context))
 }
 
 func ffmpegConcatChunks(listPath string, outputPath string) error {
@@ -710,7 +714,7 @@ func ffmpegFixupInput(inputPath, outputPath string, y bool) error {
 	return cmd.Run()
 }
 
-func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) error {
+func ffmpegGenerateConcatList(context EvalContext, chunks []Chunk, outputPath string) error {
 	f, err := os.Create(outputPath)
 	if err != nil {
 		return err
@@ -718,7 +722,7 @@ func ffmpegGenerateConcatList(chunks []Chunk, outputPath string) error {
 	defer f.Close()
 
 	for _, chunk := range chunks {
-		fmt.Fprintf(f, "file '%s'\n", chunk.Name())
+		fmt.Fprintf(f, "file '%s'\n", chunk.Name(context))
 	}
 
 	return nil
@@ -850,12 +854,12 @@ var Subcommands = map[string]Subcommand{
 				for _, chunk := range cutChunks {
 					err := ffmpegCutChunk(context, chunk)
 					if err != nil {
-						fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
+						fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(context), err)
 					}
 				}
 
 				listPath := fmt.Sprintf("cut-%02d-list.txt", i)
-				err = ffmpegGenerateConcatList(cutChunks, listPath)
+				err = ffmpegGenerateConcatList(context, cutChunks, listPath)
 				if err != nil {
 					fmt.Printf("ERROR: Could not generate not generate concat list %s: %s\n", listPath, err)
 					return false
@@ -908,11 +912,11 @@ var Subcommands = map[string]Subcommand{
 
 			err = ffmpegCutChunk(context, chunk)
 			if err != nil {
-				fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
+				fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(context), err)
 				return false
 			}
 
-			fmt.Printf("%s is rendered!\n", chunk.Name())
+			fmt.Printf("%s is rendered!\n", chunk.Name(context))
 			return true
 		},
 	},
@@ -941,12 +945,12 @@ var Subcommands = map[string]Subcommand{
 			for _, chunk := range context.chunks {
 				err := ffmpegCutChunk(context, chunk)
 				if err != nil {
-					fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(), err)
+					fmt.Printf("WARNING: Failed to cut chunk %s: %s\n", chunk.Name(context), err)
 				}
 			}
 
 			listPath := "final-list.txt"
-			err = ffmpegGenerateConcatList(context.chunks, listPath)
+			err = ffmpegGenerateConcatList(context, context.chunks, listPath)
 			if err != nil {
 				fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
 				return false
@@ -1188,10 +1192,10 @@ var Subcommands = map[string]Subcommand{
 						continue
 					}
 
-					if _, err := os.Stat(chunk.Name()); errors.Is(err, os.ErrNotExist) {
+					if _, err := os.Stat(chunk.Name(context)); errors.Is(err, os.ErrNotExist) {
 						err = ffmpegCutChunk(context, chunk)
 						if err != nil {
-							fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(), err)
+							fmt.Printf("ERROR: Could not cut the chunk %s: %s\n", chunk.Name(context), err)
 							return false
 						}
 						fmt.Printf("INFO: Waiting for more updates to %s\n", *markutPtr)
@@ -1216,7 +1220,7 @@ var Subcommands = map[string]Subcommand{
 			if !*skipcatPtr {
 
 				listPath := "final-list.txt"
-				err = ffmpegGenerateConcatList(context.chunks, listPath)
+				err = ffmpegGenerateConcatList(context, context.chunks, listPath)
 				if err != nil {
 					fmt.Printf("ERROR: Could not generate final concat list %s: %s\n", listPath, err)
 					return false
@@ -2069,6 +2073,4 @@ func main() {
 
 // TASK(20260910-114816): Consider rewritting Markut in a better language
 // TASK(20260910-114828): Embed git hash into the executable and display it on `markut version`
-// TASK(20261122-194157): Disable chapters through func
 // TASK(20261122-194158): Allow rendering chunks in parallel
-// TASK(20261122-194210): Use hashes to compute chunk names like we do for image cache in sowon2
