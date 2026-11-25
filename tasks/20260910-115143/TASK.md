@@ -1,4 +1,4 @@
-# we don't handle overlapping start and end chunks\n", cut.endLoc);
+# We don't handle overlapping start and end chunks
 
 - STATUS: OPEN
 - PRIORITY: 100

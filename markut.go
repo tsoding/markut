@@ -81,8 +81,33 @@ func (chunk Chunk) Hash(context EvalContext) string {
 	return fmt.Sprintf("%x", sha1.Sum([]byte(strings.Join(ffmpegArgsToCutChunk(context, chunk), "\n"))));
 }
 
+const ChunkFileExt = ".mp4"
+
+func IsValidChunkName(fileName string) bool {
+	if len(fileName) != sha1.Size*2 + len(ChunkFileExt) {
+		return false
+	}
+
+	if !strings.HasSuffix(fileName, ChunkFileExt) {
+		return false
+	}
+
+	for i := 0; i < sha1.Size*2; i += 1 {
+		c := fileName[i]
+		if !('0' <= c && c <= '9') && !('a' <= c && c <= 'f') {
+			return false
+		}
+	}
+
+	return true
+}
+
 func (chunk Chunk) Name(context EvalContext) string {
-	return fmt.Sprintf("%s/%s.mp4", ChunksFolder, chunk.Hash(context));
+	return fmt.Sprintf("%s/%s%s", ChunksFolder, chunk.Hash(context), ChunkFileExt);
+}
+
+func (chunk Chunk) UnfinishedName(context EvalContext) string {
+	return fmt.Sprintf("%s/%s-unfinished%s", ChunksFolder, chunk.Hash(context), ChunkFileExt);
 }
 
 func (chunk Chunk) Duration() Millis {
@@ -645,15 +670,15 @@ func ffmpegCutChunk(context EvalContext, chunk Chunk) error {
 	ffmpeg := ffmpegPathToBin()
 	args := []string{}
 
-	// We always rerender unfinished-chunk.mp4, because it might still
+	// We always rerender unfinished chunk file, because it might still
 	// exist due to the rendering erroring out or canceling. It's a
-	// temporary file that is copied and renamed to the chunks/ folder
+	// temporary file that is copied and renamed in the chunks/ folder
 	// after the rendering has finished successfully. The successfully
 	// rendered chunks are not being rerendered due to the check at
 	// the beginning of the function.
 	args = append(args, "-y")
 	args = append(args, ffmpegArgsToCutChunk(context, chunk)...)
-	unfinishedChunkName := "unfinished-chunk.mp4"
+	unfinishedChunkName := chunk.UnfinishedName(context)
 	args = append(args, unfinishedChunkName)
 
 	logCmd(ffmpeg, args...)
@@ -1111,6 +1136,7 @@ var Subcommands = map[string]Subcommand{
 		Run: func(name string, args []string) bool {
 			subFlag := flag.NewFlagSet(name, flag.ContinueOnError)
 			markutPtr := subFlag.String("markut", "MARKUT", "Path to the MARKUT file")
+			forcePtr := subFlag.Bool("f", false, "Force remove even the files that are not valid chunk. May remove unfinished chunks that are being rendered. Use with caution!")
 
 			err := subFlag.Parse(args)
 
@@ -1137,13 +1163,16 @@ var Subcommands = map[string]Subcommand{
 
 			for _, file := range files {
 				if !file.IsDir() {
-					filePath := fmt.Sprintf("%s/%s", ChunksFolder, file.Name())
-					if !context.containsChunkWithName(filePath) {
-						fmt.Printf("INFO: deleting chunk file %s\n", filePath)
-						err = os.Remove(filePath)
-						if err != nil {
-							fmt.Printf("ERROR: could not remove file %s: %s\n", filePath, err)
-							return false
+					fileName := file.Name()
+					if IsValidChunkName(fileName) || *forcePtr {
+						filePath := fmt.Sprintf("%s/%s", ChunksFolder, fileName)
+						if !context.containsChunkWithName(filePath) {
+							fmt.Printf("INFO: deleting chunk file %s\n", filePath)
+							err = os.Remove(filePath)
+							if err != nil {
+								fmt.Printf("ERROR: could not remove file %s: %s\n", filePath, err)
+								return false
+							}
 						}
 					}
 				}

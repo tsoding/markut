@@ -1,9 +1,14 @@
 # Allow rendering chunks in parallel
 
-- STATUS: OPEN
+- STATUS: CLOSED
 - PRIORITY: 99
-- TAGS: scope
 
-Which means that instead of using `unfinished-chunk.mp4` we should come up with a unique name per rendered chunk.
+The goal is actually to enable rendering cuts while the entire video
+is rendering with `final`. Literally had this use case recently and
+the tool wasn't supporting it.
 
-Maybe it should be based on TASK(20261122-194210)? Basically `chunks/<hash>-unfinished.mp4`.
+Which means that instead of using `unfinished-chunk.mp4` we should
+come up with a unique name per rendered chunk.
+
+Maybe it should be based on TASK(20261122-194210)? Basically
+`chunks/<hash>-unfinished.mp4`.

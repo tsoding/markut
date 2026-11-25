@@ -1,4 +1,4 @@
-# overflowing start offset is not implemented yet\n", cut.startLoc)
+# overflowing start offset is not implemented yet
 
 - STATUS: OPEN
 - PRIORITY: 100

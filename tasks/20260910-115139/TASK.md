@@ -1,4 +1,4 @@
-# overflowing end offset is not implemented yet\n", cut.endLoc)
+# overflowing end offset is not implemented yet
 
 - STATUS: OPEN
 - PRIORITY: 100
